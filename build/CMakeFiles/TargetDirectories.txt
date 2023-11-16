@@ -1,3 +1,0 @@
-C:/dev/uw-capstone/build/CMakeFiles/qrfactor.dir
-C:/dev/uw-capstone/build/CMakeFiles/ALL_BUILD.dir
-C:/dev/uw-capstone/build/CMakeFiles/ZERO_CHECK.dir
