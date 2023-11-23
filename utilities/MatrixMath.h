@@ -144,7 +144,86 @@ void QRDecompose_Householder(T* Q, T* R, const T* A, int n)
 }
 
 template <typename T>
-int Norm(T)
+T OneNorm(T* A, int n)
 {
-    return 0;
+    T max = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        T sum = 0;
+
+        for (int j = 0; j < n; ++j)
+            sum += abs(A[j + n * i]);
+
+        if (sum > max)
+            max = sum;
+    }
+
+    return max;
+}
+
+template <typename T>
+T FrobeniusNorm(T* A, int n)
+{
+    T sum = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j < n; ++j)
+            sum += Square(A[j + n * i]);
+    }
+    return sqrt(sum);
+}
+
+template <typename T>
+T InfinityNorm(T* A, int n)
+{
+    T sum = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j < n; ++j)
+            sum += abs(A[i + n * j]);
+    }
+    return sqrt(sum);
+}
+
+template <typename T>
+void PrintMatrix(const T* A, int n)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        printf("[");
+
+        for (int j = 0; j < n; ++j)
+        {
+            printf("%6.2f", A[i + n * j]);
+        }
+
+        printf("]\n");
+    }
+    printf("\n");
+}
+
+template <typename T>
+int TestOrthonormality(T* A, int n)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        // Test normalized
+        double m = Magnitude(A + (n * i), n);
+        if (!IsEqual(m, 1.0))
+        {
+            return 0x1; // Unnormalized vector
+        }
+
+        // Test linear independence
+        for (int j = i + 1; j < n; ++j)
+        {
+            T d = Dot(A + (n * i), A + (n * j), n);
+            if (!IsZero(d))
+            {
+                return 0x2; // Dependent basis vectors
+            }
+        }
+    }
+
+    return 0x0;
 }

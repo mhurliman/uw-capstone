@@ -1,4 +1,3 @@
-project(OpenMPITest)
 
 file(GLOB SOURCES "*.cpp")
 add_executable(OpenMPITest ${SOURCES})

@@ -7,13 +7,21 @@ using c32 = std::complex<float>;
 using c64 = std::complex<double>;
 
 template <typename T>
-bool IsEqual(T a, T b, T tolerance = 1e-5)
+bool IsEqual(T a, T b, double tolerance = 1e-5)
 {
     return abs(a - b) <= tolerance;
 }
 
+template <>
+bool IsEqual(c64 a, c64 b, double tolerance)
+{
+    return 
+        IsEqual(a.real(), b.real(), tolerance) &&
+        IsEqual(a.imag(), b.imag(), tolerance);
+}
+
 template <typename T>
-bool IsZero(T a, T tolerance = 1e-5)
+bool IsZero(T a, double tolerance = 1e-5)
 {
     return IsEqual(a, T(0), tolerance);
 }
