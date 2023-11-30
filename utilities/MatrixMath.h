@@ -303,8 +303,8 @@ void QRIterate(T* E, T* A, int N, int iterations)
 
     // Grab scratch memory
     auto arena = MemoryArenaPool::GetArena<T>(N * N * 2);
-    T* Q = arena.Allocate<T>(N * N);
-    T* R = arena.Allocate<T>(N * N);
+    T* Q = arena.template Allocate<T>(N * N);
+    T* R = arena.template Allocate<T>(N * N);
 
     // Reduce rank at each step
     for (int i = N; i > 2; --i)
