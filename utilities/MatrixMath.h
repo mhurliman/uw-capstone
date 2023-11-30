@@ -3,11 +3,62 @@
 #include "VectorMath.h"
 #include "MemoryArena.h"
 
+#include <algorithm>
+
+template <typename T>
+void Identity(T* A, int n)
+{
+    assert(A != 0 && n > 0);
+
+    memset(A, 0, n * n * sizeof(T));
+
+    for (int i = 0; i < n; ++i)
+    {
+        A[i + n * i] = 1.0;
+    }
+}
+
+template <typename T, typename Generator>
+void RandomMatrix(T* A, int n, Generator g)
+{
+    for (int i = 0; i < n * n; ++i)
+    {
+        A[i] = g();
+    }
+}
+
+template <typename Generator>
+void RandomMatrix(c64* A, int n, Generator g)
+{
+    for (int i = 0; i < n * n; ++i)
+    {
+        A[i] = c64{ g(), g() };
+    }
+}
+
+template <typename Generator>
+void RandomMatrixReal(c64* A, int n, Generator g)
+{
+    for (int i = 0; i < n * n; ++i)
+    {
+        A[i] = c64{ g(), 0 };
+    }
+}
+
+template <typename Generator>
+void RandomMatrixImag(c64* A, int n, Generator g)
+{
+    for (int i = 0; i < n * n; ++i)
+    {
+        A[i] = c64{ 0, g() };
+    }
+}
+
 // Implements n x n matrix transpose operation
 template <typename T>
 void Transpose(T* B, const T* A, int n)
 {
-    assert(B != NULL && A != NULL);
+    assert(B != NULL && A != NULL && n > 0);
 
     if (B == A) // In-place transposition
     {
@@ -36,6 +87,8 @@ void Transpose(T* B, const T* A, int n)
 template <typename T>
 void MatMul(T* C, const T* B, const T* A, int n)
 {
+    assert(C != NULL && B != NULL && A != NULL && n > 0);
+
     for (int i = 0; i < n; ++i)
     {
         for (int j = 0; j < n; ++j)
@@ -52,8 +105,10 @@ void MatMul(T* C, const T* B, const T* A, int n)
 
 // Assume Q, R, & A are n x n matrices
 template <typename T>
-void QRDecompose_GramSchmidt(T* Q, T* R, const T* A, int n)
+void QRDecomposeGS(T* Q, T* R, const T* A, int n)
 {
+    assert(Q != 0 && R != 0 && A != 0 && n > 0);
+
     memset(R, 0, n * n * sizeof(T));
 
     // Perform 
@@ -80,21 +135,12 @@ void QRDecompose_GramSchmidt(T* Q, T* R, const T* A, int n)
     }
 }
 
-template <typename T>
-void Identity(T* A, int n)
-{
-    memset(A, 0, n * n * sizeof(T));
-
-    for (int i = 0; i < n; ++i)
-    {
-        A[i + n * i] = 1.0;
-    }
-}
-
 
 template <typename T>
-void QRDecompose_Householder(T* Q, T* R, const T* A, int n)
+void QRDecomposeHH(T* Q, T* R, const T* A, int n)
 {
+    assert(Q != 0 && R != 0 && A != 0 && n > 0);
+
     auto arena = MemoryArenaPool::GetArena<T>(n * 2);
 
     T* w = arena.template Allocate<T>(n);
@@ -146,6 +192,8 @@ void QRDecompose_Householder(T* Q, T* R, const T* A, int n)
 template <typename T>
 T OneNorm(T* A, int n)
 {
+    assert(A != 0 && n > 0);
+
     T max = 0;
     for (int i = 0; i < n; ++i)
     {
@@ -164,6 +212,8 @@ T OneNorm(T* A, int n)
 template <typename T>
 T FrobeniusNorm(T* A, int n)
 {
+    assert(A != 0 && n > 0);
+
     T sum = 0;
     for (int i = 0; i < n; ++i)
     {
@@ -176,6 +226,8 @@ T FrobeniusNorm(T* A, int n)
 template <typename T>
 T InfinityNorm(T* A, int n)
 {
+    assert(A != 0 && n > 0);
+
     T sum = 0;
     for (int i = 0; i < n; ++i)
     {
@@ -186,15 +238,17 @@ T InfinityNorm(T* A, int n)
 }
 
 template <typename T>
-void PrintMatrix(const T* A, int n)
+void PrintMatrix(const T* A, int m, int n)
 {
-    for (int i = 0; i < n; ++i)
+    assert(A != 0 && n > 0);
+
+    for (int i = 0; i < m; ++i)
     {
         printf("[");
 
         for (int j = 0; j < n; ++j)
         {
-            printf("%6.2f", A[i + n * j]);
+            printf("%7.3f", A[i + m * j]);
         }
 
         printf("]\n");
@@ -203,8 +257,22 @@ void PrintMatrix(const T* A, int n)
 }
 
 template <typename T>
+void PrintMatrix(const T* A, int n)
+{
+    PrintMatrix(A, n, n);
+}
+
+template <typename T>
+void PrintVector(const T* A, int n)
+{
+    PrintMatrix(A, 1, n);
+}
+
+template <typename T>
 int TestOrthonormality(T* A, int n)
 {
+    assert(A != 0 && n > 0);
+
     for (int i = 0; i < n; ++i)
     {
         // Test normalized
@@ -227,3 +295,48 @@ int TestOrthonormality(T* A, int n)
 
     return 0x0;
 }
+
+template <typename T, typename QRDecompFunctor>
+void QRIterate(T* E, T* A, int N, int iterations)
+{
+    assert(E != 0 && A != 0);
+
+    // Grab scratch memory
+    auto arena = MemoryArenaPool::GetArena<T>(N * N * 2);
+    T* Q = arena.Allocate<T>(N * N);
+    T* R = arena.Allocate<T>(N * N);
+
+    // Reduce rank at each step
+    for (int i = N; i > 2; --i)
+    {
+        // Iterate over QR decompositions & similar matrix swap
+        for (int j = 0; j < iterations; ++j)
+        {
+            QRDecompFunctor()(Q, R, A, N);
+            MatMul(A, R, Q, N);
+        }
+
+        // Grab approximated eigenvalue in BR entry
+        E[i - 1] = A[i * i - 1];
+
+        for (int j = 1; j < i; ++j)
+        {
+            memcpy(A + j * (i - 1), A + j * i, (i - 1) * sizeof(T));
+        }
+    }
+
+    // Snag last two eigenvalues from remaining 2x2 matrix
+    E[1] = A[3];
+    E[0] = A[0];
+
+    // Sort Eigenvalues from smallest to largest
+    std::stable_sort(E, E + N);
+}
+
+template <typename T> struct FunctorQRDecompHH { void operator()(T*a, T* b, T* c, int d) { QRDecomposeHH(a, b, c, d); }};
+template <typename T> 
+constexpr void QRIterateHH(T* Eigenvalues, T* A, int N, int iterations = 15) { QRIterate<T, FunctorQRDecompHH<T>>(Eigenvalues, A, N, iterations); }
+
+template <typename T> struct FunctorQRDecompGS { void operator()(T*a, T* b, T* c, int d) { QRDecomposeGS(a, b, c, d); }};
+template <typename T> 
+constexpr void QRIterateGS(T* Eigenvalues, T* A, int N, int iterations = 15) { QRIterate<T, FunctorQRDecompGS<T>>(Eigenvalues, A, N, iterations); }

@@ -54,7 +54,7 @@ double Magnitude(c64 a)
 template <typename T>
 T Conjugate(T v)
 {
-    return v; // Trivial case where v has no imaginary component
+    return v; // Trivial case where v is pure real
 }
 
 template <>
@@ -66,7 +66,7 @@ c64 Conjugate(c64 v)
 // Conjugate of complex vector
 void Conjugate(c64* b, const c64* a, int n)
 {
-    assert(a != NULL && b != NULL);
+    assert(a != NULL && b != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
@@ -78,7 +78,7 @@ void Conjugate(c64* b, const c64* a, int n)
 template <typename T>
 T Dot(const T* a, const T* b, int n)
 {
-    assert(a != NULL && b != NULL);
+    assert(a != NULL && b != NULL && n > 0);
 
     double c = 0;
     for (int i = 0; i < n; ++i)
@@ -100,7 +100,7 @@ double Magnitude(const T* a, int n)
 template <typename T>
 void Normalize(T* b, const T* a, int n)
 {
-    assert(b != NULL && a != NULL);
+    assert(b != NULL && a != NULL && n > 0);
 
     T invMag = 1.0 / Magnitude(a, n);
     for (int i = 0; i < n; ++i)
@@ -113,7 +113,7 @@ void Normalize(T* b, const T* a, int n)
 template <typename T>
 void Subtract(T* c, const T* a, const T* b, int n)
 {
-    assert(a != NULL && b != NULL && c != NULL);
+    assert(a != NULL && b != NULL && c != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
@@ -125,7 +125,7 @@ void Subtract(T* c, const T* a, const T* b, int n)
 template <typename T>
 void Add(T* c, const T* a, const T* b, int n)
 {
-    assert(a != NULL && b != NULL && c != NULL);
+    assert(a != NULL && b != NULL && c != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
@@ -137,7 +137,7 @@ void Add(T* c, const T* a, const T* b, int n)
 template <typename T>
 void Multiply(T* c, const T* a, const T* b, int n)
 {
-    assert(a != NULL && b != NULL && c != NULL);
+    assert(a != NULL && b != NULL && c != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
@@ -149,7 +149,7 @@ void Multiply(T* c, const T* a, const T* b, int n)
 template <typename T, typename U>
 void Multiply(T* b, const T* a, int n, U v)
 {
-    assert(a != NULL && b != NULL);
+    assert(a != NULL && b != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
@@ -169,7 +169,7 @@ void Divide(T* b, const T* a, int n, U v)
 template <typename T, typename U>
 void MultiplyAdd(T* c, const T* a, const T* b, int n, U v)
 {
-    assert(a != NULL && b != NULL);
+    assert(c != NULL && a != NULL && b != NULL && n > 0);
 
     for (int i = 0; i < n; ++i)
     {
