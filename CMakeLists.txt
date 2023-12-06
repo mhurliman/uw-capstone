@@ -30,6 +30,9 @@ function(link_scalapack target)
         HAVE_LAPACK_CONFIG_H 
         LAPACK_COMPLEX_CPP
     )
+    if (UNIX)
+        target_link_libraries(${target} PRIVATE gfortran)
+    endif()
 endfunction()
 
 function(link_openblas target)
