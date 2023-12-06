@@ -27,9 +27,33 @@ bool IsZero(T a, double tolerance = 1e-5)
 }
 
 template <typename T>
-T Sign(T v)
+double Real(T v)
 {
-    return v < 0 ? -1.0 : 1.0;
+    return v;
+}
+
+template <>
+double Real(c64 v)
+{
+    return v.real();
+}
+
+template <typename T>
+double Imag(T v)
+{
+    return 0;
+}
+
+template <>
+double Imag(c64 v)
+{
+    return v.imag();
+}
+
+template <typename T>
+double Sign(T v)
+{
+    return Real(v) < 0 ? -1.0 : 1.0;
 }
 
 // Square a value
@@ -60,7 +84,7 @@ T Conjugate(T v)
 template <>
 c64 Conjugate(c64 v)
 {
-    return c64(v.real(), -v.imag()); // 
+    return conj(v);
 }
 
 // Conjugate of complex vector
@@ -74,16 +98,22 @@ void Conjugate(c64* b, const c64* a, int n)
     }
 }
 
+template <typename T> void SetVector(T* A, T a) { A[0] = a; }
+template <typename T> void SetVector(T* A, T a0, T a1) { A[0] = a0; A[1] = a1; }
+template <typename T> void SetVector(T* A, T a0, T a1, T a2) { A[0] = a0; A[1] = a1; A[2] = a2; }
+template <typename T> void SetVector(T* A, T a0, T a1, T a2, T a3) { A[0] = a0; A[1] = a1; A[2] = a2; A[3] = a3; }
+template <typename T> void SetVector(T* A, T a0, T a1, T a2, T a3, T a4) { A[0] = a0; A[1] = a1; A[2] = a2; A[3] = a3; A[4] = a4; }
+
 // Vector dot product
 template <typename T>
 T Dot(const T* a, const T* b, int n)
 {
     assert(a != NULL && b != NULL && n > 0);
 
-    double c = 0;
+    T c = 0;
     for (int i = 0; i < n; ++i)
     {
-        c += Conjugate(a[i]) * b[i]; // Decays to a[i] * b[i] in non-complex case
+        c += a[i] * Conjugate(b[i]); // Decays to a[i] * b[i] in non-complex case
     }
 
     return c;
@@ -93,7 +123,8 @@ T Dot(const T* a, const T* b, int n)
 template <typename T>
 double Magnitude(const T* a, int n)
 {
-    return sqrt(Dot(a, a, n));
+    double v = Real(Dot(a, a, n));
+    return sqrt(v);
 }
 
 // Vector normalization

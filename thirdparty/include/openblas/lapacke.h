@@ -55,9 +55,6 @@ extern "C" {
 #define LAPACK_WORK_MEMORY_ERROR       -1010
 #define LAPACK_TRANSPOSE_MEMORY_ERROR  -1011
 
-lapack_complex_float lapack_make_complex_float( float re, float im );
-lapack_complex_double lapack_make_complex_double( double re, double im );
-
 /* C-LAPACK function prototypes */
 
 lapack_int LAPACKE_sbdsdc( int matrix_layout, char uplo, char compq,

@@ -18,22 +18,74 @@ void Identity(T* A, int n)
     }
 }
 
+template <typename T>
+void Zeros(T* A, int n)
+{
+    assert(A != 0 && n > 0);
+
+    memset(A, 0, n * n * sizeof(T));
+}
+
+template <typename T, typename Generator>
+void RandomHermitian(T* A, int n, Generator g)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j <= i; ++j)
+        {
+            A[i + j * n] = A[j + i * n] = g();
+        }
+    }
+}
+
+template <typename Generator>
+void RandomHermitian(c64* A, int n, Generator g)
+{
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j <= i; ++j)
+        {
+            if (i == j)
+            {
+                A[j + i * n] = g();
+            }
+            else
+            {
+                A[j + i * n] = c64{ g(), g() };
+                A[i + j * n] = Conjugate(A[j + i * n]);
+            }
+        }
+    }
+}
+
+template <typename T, typename Generator>
+void RandomMatrix(T* A, int m, int n, Generator g)
+{
+    for (int i = 0; i < m * n; ++i)
+    {
+        A[i] = g();
+    }
+}
+
 template <typename T, typename Generator>
 void RandomMatrix(T* A, int n, Generator g)
 {
-    for (int i = 0; i < n * n; ++i)
+    return RandomMatrix(A, n, n, g);
+}
+
+template <typename Generator>
+void RandomMatrix(c64* A, int m, int n, Generator g)
+{
+    for (int i = 0; i < m * n; ++i)
     {
-        A[i] = g();
+        A[i] = c64{ g(), g() };
     }
 }
 
 template <typename Generator>
 void RandomMatrix(c64* A, int n, Generator g)
 {
-    for (int i = 0; i < n * n; ++i)
-    {
-        A[i] = c64{ g(), g() };
-    }
+    return RandomMatrix(A, n, n, g);
 }
 
 template <typename Generator>
@@ -52,6 +104,14 @@ void RandomMatrixImag(c64* A, int n, Generator g)
     {
         A[i] = c64{ 0, g() };
     }
+}
+
+template <typename T>
+void Copy(T* B, const T* A, int n)
+{
+    assert(B != NULL && A != NULL && n > 0);
+
+    memcpy(B, A, n * n * sizeof(T));
 }
 
 // Implements n x n matrix transpose operation
@@ -109,7 +169,7 @@ void QRDecomposeGS(T* Q, T* R, const T* A, int n)
 {
     assert(Q != 0 && R != 0 && A != 0 && n > 0);
 
-    memset(R, 0, n * n * sizeof(T));
+    Zeros(R, n);
 
     // Perform 
     for (int j = 0; j < n; ++j)
@@ -147,12 +207,12 @@ void QRDecomposeHH(T* Q, T* R, const T* A, int n)
     T* t = arena.template Allocate<T>(n);
 
     Identity(Q, n); // Q is row-major order
-    memcpy(R, A, n * n * sizeof(T)); // R is column-major order
+    Copy(R, A, n); // R is column-major order
 
     for (int i = 0; i < n; ++i)
     {
-        T normx = Magnitude(R + (i + n * i), n - i);
-        T s = -Sign(R[i + n * i]);
+        double normx = Magnitude(R + (i + n * i), n - i);
+        double s = Sign(R[i + n * i]);
         T u1 = R[i + n * i] - s * normx;
 
         // Compute w
@@ -167,7 +227,7 @@ void QRDecomposeHH(T* Q, T* R, const T* A, int n)
         {
             T* Rij = R + (i + n * j); // Column j of R (column-major order)
 
-            T v = Dot(w, Rij, n - i);
+            T v = Dot(Rij, w, n - i);
             for (int k = 0; k < n - i; ++k)
             {
                 Rij[k] -= t[k] * v;
@@ -240,7 +300,7 @@ T InfinityNorm(T* A, int n)
 template <typename T>
 void PrintMatrix(const T* A, int m, int n)
 {
-    assert(A != 0 && n > 0);
+    assert(A != 0 && n > 0 && m > 0);
 
     for (int i = 0; i < m; ++i)
     {
@@ -249,6 +309,28 @@ void PrintMatrix(const T* A, int m, int n)
         for (int j = 0; j < n; ++j)
         {
             printf("%7.3f", A[i + m * j]);
+        }
+
+        printf("]\n");
+    }
+    printf("\n");
+}
+
+template <>
+void PrintMatrix<c64>(const c64* A, int m, int n)
+{
+    assert(A != 0 && n > 0 && m > 0);
+
+    for (int i = 0; i < m; ++i)
+    {
+        printf("[");
+
+        for (int j = 0; j < n; ++j)
+        {
+            double s = Sign(A[i + m * j].imag());
+
+            const char* str = (s > 0) ? "(%7.3f + %7.3fi) " : "(%7.3f - %7.3fi) ";
+            printf(str, A[i + m * j].real(), s * A[i + m * j].imag());
         }
 
         printf("]\n");
@@ -307,13 +389,13 @@ void QRIterate(T* E, T* A, int N, int iterations)
     T* R = arena.template Allocate<T>(N * N);
 
     // Reduce rank at each step
-    for (int i = N; i > 2; --i)
+    for (int i = N; i > 1; --i)
     {
         // Iterate over QR decompositions & similar matrix swap
         for (int j = 0; j < iterations; ++j)
         {
-            QRDecompFunctor()(Q, R, A, N);
-            MatMul(A, R, Q, N);
+            QRDecompFunctor()(Q, R, A, i);
+            MatMul(A, R, Q, i);
         }
 
         // Grab approximated eigenvalue in BR entry
@@ -325,12 +407,11 @@ void QRIterate(T* E, T* A, int N, int iterations)
         }
     }
 
-    // Snag last two eigenvalues from remaining 2x2 matrix
-    E[1] = A[3];
+    // Last eigenvalue is in A_0
     E[0] = A[0];
 
     // Sort Eigenvalues from smallest to largest
-    std::stable_sort(E, E + N);
+    std::stable_sort(E, E + N, [&](const T& a, const T& b) { return Real(a) < Real(b); });
 }
 
 template <typename T> struct FunctorQRDecompHH { void operator()(T*a, T* b, T* c, int d) { QRDecomposeHH(a, b, c, d); }};
