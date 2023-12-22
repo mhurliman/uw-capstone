@@ -13,7 +13,7 @@ public:
         : mt{ CreateSeedSeq() }
     { }
 
-    Random(int seed)
+    Random(long unsigned int seed)
         : mt{ seed }
     { }
 
