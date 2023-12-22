@@ -8,6 +8,15 @@
 #include <lapacke.h>
 #include <cblas.h>
 
+
+void pdgemm_(char* TRANSA, char* TRANSB,
+            int* M, int* N, int* K,
+            double* ALPHA,
+            double* A, int* IA, int* JA, int* DESCA,
+            double* B, int* IB, int* JB, int* DESCB,
+            double* BETA,
+            double* C, int* IC, int* JC, int* DESCC );
+
 void test_dgeev()
 {
     constexpr int N = 5;

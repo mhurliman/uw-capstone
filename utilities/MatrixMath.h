@@ -4,6 +4,7 @@
 #include "MemoryArena.h"
 
 #include <algorithm>
+#include <cstring>
 
 template <typename T>
 void Identity(T* A, int n)
