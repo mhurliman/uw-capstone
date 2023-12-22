@@ -6,13 +6,11 @@
 #include <mpi.h>
 #include "MemoryArena.h"
 
-using namespace std;
-
 #define MPI_CHECK(x) do { \
     int errCode = x; \
     if (errCode != MPI_SUCCESS) { \
         int errLen = 0; \
-        char errStr[MPI_MAX_ERROR_STRING] {'\0'}; \
+        char errStr[MPI_MAX_ERROR_STRING] {}; \
         MPI_Error_string(errCode, errStr, &errLen); \
         printf("%s", errStr); \
         assert(x == MPI_SUCCESS); \
@@ -37,8 +35,12 @@ int main(int argc, char* argv[])
     int procRank;
     MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &procRank));
 
-    cout << "Hello world, I have  rank " << procRank << " out of " 
-         << procNum << endl;
+    int nameLen;
+    char procName[MPI_MAX_PROCESSOR_NAME]{};
+    MPI_Get_processor_name(procName, &nameLen);
+
+    std::cout << "Hello world, " << procName << " here! I have rank " << procRank << " out of " 
+         << procNum << std::endl;
 
     MPI_Finalize();
 
