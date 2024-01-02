@@ -22,6 +22,8 @@ int main(int argc, char* argv[])
     char procName[MPI_MAX_PROCESSOR_NAME]{};
     MPI_CHECK(MPI_Get_processor_name(procName, &nameLen));
 
+    std::cout << procName << std::endl;
+
     int context;
     Cblacs_get(-1, 0, &context);
 
