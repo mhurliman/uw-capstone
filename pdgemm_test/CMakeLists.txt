@@ -8,4 +8,5 @@ target_compile_definitions(pdgemm_test PUBLIC -DHAVE_LAPACK_CONFIG_H -DLAPACK_CO
 target_link_libraries(pdgemm_test PRIVATE scalapack)
 target_link_libraries(pdgemm_test PRIVATE openblas)
 target_link_libraries(pdgemm_test PRIVATE mpi)
+target_link_libraries(pdgemm_test PRIVATE gfortran)
 target_link_libraries(pdgemm_test PRIVATE utilities) 
