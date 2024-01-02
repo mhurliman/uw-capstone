@@ -4,8 +4,8 @@
 
 #include "DistributedMatrix.h"
 
-int M = 9, N = 10, L = 11;
-int MBSIZE = 3, NBSIZE = 2, LBSIZE = 2;
+int M = 16, N = 20, L = 32;
+int MBSIZE = 4, NBSIZE = 4, LBSIZE = 11;
 
 int main(int argc, char* argv[])
 {
@@ -22,20 +22,22 @@ int main(int argc, char* argv[])
     char procName[MPI_MAX_PROCESSOR_NAME]{};
     MPI_CHECK(MPI_Get_processor_name(procName, &nameLen));
 
-    std::cout << procName << std::endl;
+    std::cout << "Process " << myid << " on " << procName << std::endl;
 
     int context;
     Cblacs_get(-1, 0, &context);
 
 	int2 procDims;
     procDims.col = ceilf(sqrtf(p));
-    for (; p % procDims.col; procDims.col--);
+    for (; p % procDims.col; --procDims.col);
 
 	procDims.row = p / procDims.col;
 	if (procDims.row > procDims.col)
 	{
 		std::swap(procDims.col, procDims.row);
 	}
+
+    std::flush(std::cout);
 
 	// Initialize the pr x pc process grid
 	int2 id;
@@ -50,7 +52,6 @@ int main(int argc, char* argv[])
     std::cout << Af;
     std::cout << Bf;
 
-	// Multiply C = alpha * A * B + beta * C (alpha = 1, beta = 0)
     DistributedMatrix::GEMM(1.0, Af, Bf, 0.0, Cf);
 
     std::cout << Cf;
@@ -59,12 +60,9 @@ int main(int argc, char* argv[])
 	float err = 0.0;
     Cf.CustomLocalOp([&](int2 gid, double& v) { err += abs(v) - (gid.row + 1) * gid.col; });
 
-	// Check result
 	printf("Local error on proc %d = %.2f\n", myid, err);
 
-	// Release process grid
 	Cblacs_gridexit(context);
-
     MPI_Finalize();
 
     return 0;
