@@ -30,8 +30,11 @@ struct MatDesc
     operator int const*(void) const { return &dtype; }
 };
 
-void ScatterMatrix(int2 id, int2 pgDims, const double* global, const MatDesc& desc, double* local, int2 localDims);
-void GatherMatrix(int2 id, int2 pgDims, double* global, const MatDesc& desc, const double* local, int2 localDims);
+template <typename T>
+void ScatterMatrix(int2 id, int2 pgDims, const T* global, const MatDesc& desc, T* local, int2 localDims);
+
+template <typename T>
+void GatherMatrix(int2 id, int2 pgDims, T* global, const MatDesc& desc, const T* local, int2 localDims);
 
 
 // 1D-BC Local to Global Index Transform
@@ -63,95 +66,133 @@ inline void GlobalToLocal(int globalRowIdx, int globalColIdx, int2 pgDims, const
     GlobalToLocal(globalRowIdx, pgDims.row, desc.Mb, pgId.row, localId.row);
 }
 
+
+template <typename T>
 class DistributedMatrix
 {
 public:
-
-    // Delete copy semantics
-    DistributedMatrix(const DistributedMatrix&) = delete;
-    DistributedMatrix(DistributedMatrix&&) = default;
-    DistributedMatrix& operator=(const DistributedMatrix&) = delete;
-    DistributedMatrix& operator=(DistributedMatrix&&) = default;
-
     virtual ~DistributedMatrix(void)
     {
         Free(LocalData);
     }
 
-    const double* Data(void) const { return LocalData; }
-    double* Data(void) { return LocalData; }
+    T* Data(void) { return static_cast<T*>(LocalData); }
+    const T* Data(void) const { return static_cast<T*>(LocalData); }
+
+    int NumRows(void) const { return m_desc.M; }
+    int NumCols(void) const { return m_desc.N; }
+    bool IsSquare(void) const { return NumRows() == NumCols(); }
     const MatDesc& Desc(void) const { return m_desc; }
+
+    int2 ProcGridDimensions(void) const { return PGridDims; }
+    int2 ProcGridId(void) const { return PGridId; }
 
     bool IsRootProcess() const { return PGridId.isRoot(); }
 
-    using InitializerFunc = std::function<double(int2)>;
-    void SetElements(InitializerFunc f);
+    using InitializerFunc = std::function<T(int2)>;
+    using ModifierFunc = std::function<T(int2, T&)>;
+    using CustomOpFunc = std::function<void(int2, T&)>;
 
-    using CustomOpFunc = std::function<void(int2, double&)>;
+    void SetElements(InitializerFunc f);
+    void ModifyElements(ModifierFunc f);
     void CustomLocalOp(CustomOpFunc f);
 
     void PrintLocal(std::ostream& os) const;
     void PrintGlobal(std::ostream& os) const;
 
+    void PrintLocal() const { PrintLocal(std::cout); }
+    void PrintGlobal() const { PrintGlobal(std::cout); }
+
 public:
-    static DistributedMatrix Uninitialized(
+    static DistributedMatrix<T> Uninitialized(
         int context, int2 pgDims, int2 pgId, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize
     );
+    
+    template <typename U>
+    static DistributedMatrix<T> Uninitialized(const DistributedMatrix<U>& copyDims);
 
-    static DistributedMatrix Initialized(
+    static DistributedMatrix<T> Initialized(
         int context, int2 pgDims, int2 pgId, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize,
         InitializerFunc f
     );
 
-    static DistributedMatrix Identity(
+    static DistributedMatrix<T> Identity(
         int context, int2 pgDims, int2 pgId, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize
     );
 
-    static DistributedMatrix UniformRandom(
+    static DistributedMatrix<T> UniformRandom(
         int context, int2 pgDims, int2 pgId, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize,
-        int seed, float range
+        int seed, double range = 1.0f
     );
 
-    static DistributedMatrix UniformRandomHermitian(
-        int context, int2 pgDims, int2 pgId, 
-        int numRows, int numCols, int rowBlockSize, int colBlockSize,
-        int seed
+    static DistributedMatrix<T> RandomHermitian(
+        int context, int2 pgDims, int2 pgId,
+        int N, int rowBlockSize, int colBlockSize, int seed
     );
+    
+    static DistributedMatrix<T> Duplicate(const DistributedMatrix<T>& A);
+    static void Duplicate(const DistributedMatrix<T>& A, DistributedMatrix<T>& B);
 
-    static void GEMM(double alpha, const DistributedMatrix& A, const DistributedMatrix& B, double beta, DistributedMatrix& C);
+    // Operations
+    static void GEMM(double alpha, const DistributedMatrix<T>& A, const DistributedMatrix<T>& B, double beta, DistributedMatrix<T>& C);
+    
+    template <typename U>
+    static void HEEV(DistributedMatrix<T>& A, DistributedMatrix<U>& W, DistributedMatrix<T>& Z);
 
-private:
-    DistributedMatrix() = default;
+    template <typename U>
+    static void HEEV(DistributedMatrix<T>& A, DistributedMatrix<U>& W);
+
+    // Delete copy semantics
+    DistributedMatrix(const DistributedMatrix&) = delete;
+    DistributedMatrix& operator=(const DistributedMatrix&) = delete;
+
+    // Enable move semantics
+    DistributedMatrix(DistributedMatrix&&) = default;
+    DistributedMatrix& operator=(DistributedMatrix&&) = default;
+
 
     void Init(
         int context, int2 pgDims, int2 pgId, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize
     );
+private:
+    DistributedMatrix(void) : LocalData{} {}
 
-    template <typename T>
-    static T* Allocate(int numRows, int numCols)
+    template <typename U>
+    static U* Allocate(int count)
     {
-        return static_cast<T*>(calloc(numRows * numCols, sizeof(T)));
+        return static_cast<U*>(calloc(count, sizeof(U)));
     }
 
-    template <typename T>
-    static void Free(T* localData)
+    template <typename U>
+    static U* Allocate(int numRows, int numCols)
+    {
+        return static_cast<U*>(calloc(numRows * numCols, sizeof(U)));
+    }
+
+    template <typename U>
+    static void Free(U* localData)
     {
         free(localData);
     }
 
 private:
-    int2 PGridDims;
-    int2 PGridId;
-    MatDesc m_desc;
-    double* LocalData;
-    int2 LocalDims;
-
-    static const int s_Zero = 0;
+    int2     PGridDims;
+    int2     PGridId;
+    MatDesc  m_desc;
+    T*       LocalData;
+    int2     LocalDims;
 };
 
-std::ostream& operator<<(std::ostream& os, const DistributedMatrix& m);
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const DistributedMatrix<T>& m)
+{
+    m.PrintGlobal(os);
+    return os;
+}
+
+#include "DistributedMatrix.inl"

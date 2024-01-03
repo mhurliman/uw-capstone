@@ -45,8 +45,5 @@ endfunction()
 
 add_subdirectory(utilities)
 add_subdirectory(qrfactor)
-add_subdirectory(OpenBLASTest)
-add_subdirectory(OpenMPITest)
 add_subdirectory(fft)
-add_subdirectory(LAPACKTest)
 add_subdirectory(pdgemm_test)
