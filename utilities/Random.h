@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <random>
+#include <complex>
 
 // Ripped from the below link for using the fancy new C++ random library
 // https://www.learncpp.com/cpp-tutorial/generating-random-numbers-using-mersenne-twister/
@@ -32,9 +33,9 @@ private:
 };
 
 template <>
-class Random<c64>
+class Random<std::complex<double>>
 {
-    using T = c64;
+    using T = std::complex<double>;
 public:
     Random() : mt{ CreateSeedSeq() } { }
     Random(long unsigned int seed) : mt{ seed } { }
