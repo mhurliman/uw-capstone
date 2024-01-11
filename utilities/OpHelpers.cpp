@@ -156,10 +156,114 @@ namespace ops
     {
         pzheev_(jobz, uplo, n, a, ia, ja, desca, w, z, iz, jz, descz, work, lwork, rwork, lrwork, info);
     }
+    
+
+    // -----------------------------
+    // PvGERQF
+
+    template <>
+    void PvGERQF<float>(
+        const int* M, const int* N, 
+        float* A, const int* ia, const int* ja, const int* descA,
+        float* tau, float* work, const int* lwork, int* info
+    )
+    {
+        psgerqf_(M, N, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvGERQF<double>(
+        const int* M, const int* N, 
+        double* A, const int* ia, const int* ja, const int* descA,
+        double* tau, double* work, const int* lwork, int* info
+    )
+    {
+        pdgerqf_(M, N, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvGERQF<c32>(
+        const int* M, const int* N, 
+        c32* A, const int* ia, const int* ja, const int* descA,
+        c32* tau, c32* work, const int* lwork, int* info
+    )
+    {
+        pcgerqf_(M, N, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvGERQF<c64>(
+        const int* M, const int* N, 
+        c64* A, const int* ia, const int* ja, const int* descA,
+        c64* tau, c64* work, const int* lwork, int* info
+    )
+    {
+        pzgerqf_(M, N, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    
+    // -----------------------------
+    // PvORMQR
+
+    template <>
+    void PvORMQR<float>(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const float* A, const int* ia, const int* ja, const int* descA,
+        const float* tau, 
+        float* C, const int* ic, const int* jc, const int* descC,
+        float* work, const int* lwork, int* info
+    )
+    {
+        psormqr_(side, trans, M, N, K, A, ia, ja, descA, tau, C, ic, jc, descC, work, lwork, info);
+    }
+
+    template <>
+    void PvORMQR<double>(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const double* A, const int* ia, const int* ja, const int* descA,
+        const double* tau, 
+        double* C, const int* ic, const int* jc, const int* descC,
+        double* work, const int* lwork, int* info
+    )
+    {
+        pdormqr_(side, trans, M, N, K, A, ia, ja, descA, tau, C, ic, jc, descC, work, lwork, info);
+    }
+
+
+    // -----------------------------
+    // PvUNMQR
+
+    template <>
+    void PvUNMQR<c32>(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const c32* A, const int* ia, const int* ja, const int* descA,
+        const c32* tau, 
+        c32* C, const int* ic, const int* jc, const int* descC,
+        c32* work, const int* lwork, int* info
+    )
+    {
+        pcunmqr_(side, trans, M, N, K, A, ia, ja, descA, tau, C, ic, jc, descC, work, lwork, info);
+    }
+
+    template <>
+    void PvUNMQR<c64>(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const c64* A, const int* ia, const int* ja, const int* descA,
+        const c64* tau, 
+        c64* C, const int* ic, const int* jc, const int* descC,
+        c64* work, const int* lwork, int* info
+    )
+    {
+        pzunmqr_(side, trans, M, N, K, A, ia, ja, descA, tau, C, ic, jc, descC, work, lwork, info);
+    }
+
 
     // -----------------------------
     // PvGEMM
-
 
     template <>
     void PvGEMM<float>(
@@ -324,6 +428,7 @@ namespace ops
     {
         pzdotu_(n, dot, X, ix, jx, descX, incX, Y, iy, jy, descY, incY);
     }
+
 
     // -----------------------------
     // PvDOTC

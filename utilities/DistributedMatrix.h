@@ -113,7 +113,7 @@ public:
     inline bool IsSquare(void) const { return NumRows() == NumCols(); }
     inline const MatDesc& Desc(void) const { return m_desc; }
 
-    inline int2 ProcGridDimensions(void) const { return m_PGridDims; }
+    inline int2 ProcGridDims(void) const { return m_PGridDims; }
     inline int2 ProcGridId(void) const { return m_PGridId; }
 
     inline bool IsRootProcess() const { return m_PGridId.IsRoot(); }
@@ -137,52 +137,37 @@ public:
     void PrintGlobal(void) const { PrintGlobal(std::cout); }
 
     static DistributedMatrix<T> Uninitialized(
-        int context, int2 pgDims, int2 pgId, 
+        int context,
         int numRows, int numCols, int rowBlockSize, int colBlockSize
     );
 
     template <typename U>
-    static DistributedMatrix<T> Uninitialized(
-        int context, int2 pgDims, int2 pgId, 
-        int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data
-    );
+    static DistributedMatrix<T> Uninitialized(int context, int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data);
 
     template <typename U>
     static DistributedMatrix<T> Uninitialized(const DistributedMatrix<U>& dimsSpec);
 
     static DistributedMatrix<T> Initialized(
-        int context, int2 pgDims, int2 pgId, 
+        int context, 
         int numRows, int numCols, int rowBlockSize, int colBlockSize,
         InitializerFunc f
     );
 
     template <typename U>
-    static DistributedMatrix<T> Initialized(
-        int context, int2 pgDims, int2 pgId, 
-        int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data
-    );
+    static DistributedMatrix<T> Initialized(int context, int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data);
 
-    static DistributedMatrix<T> Identity(
-        int context, int2 pgDims, int2 pgId, 
-        int numRows, int numCols, int rowBlockSize, int colBlockSize
-    );
+    static DistributedMatrix<T> Identity(int context, int numRows, int numCols, int rowBlockSize, int colBlockSize);
 
     static DistributedMatrix<T> UniformRandom(
-        int context, int2 pgDims, int2 pgId, 
+        int context,
         int numRows, int numCols, int rowBlockSize, int colBlockSize,
         int seed, double range = 1.0f
     );
 
-    static DistributedMatrix<T> RandomHermitian(
-        int context, int2 pgDims, int2 pgId,
-        int N, int rowBlockSize, int colBlockSize, int seed
-    );
+    static DistributedMatrix<T> RandomHermitian(int context, int N, int rowBlockSize, int colBlockSize, int seed);
 
     template <typename U>
-    static DistributedMatrix<T> Diagonal(
-        int context, int2 pgDims, int2 pgId,
-        int rowBlockSize, int colBlockSize, const LocalMatrix<U>& X
-    );
+    static DistributedMatrix<T> Diagonal(int context, int rowBlockSize, int colBlockSize, const LocalMatrix<U>& X);
 
     static DistributedMatrix<T> Duplicate(const DistributedMatrix<T>& A);
     static void Duplicate(const DistributedMatrix<T>& A, DistributedMatrix<T>& B);
@@ -190,10 +175,7 @@ public:
 private:
     DistributedMatrix(void) = default;
 
-    void Init(
-        int context, int2 pgDims, int2 pgId, 
-        int numRows, int numCols, int rowBlockSize, int colBlockSize
-    );
+    void Init(int context, int numRows, int numCols, int rowBlockSize, int colBlockSize);
 
 private:
     int2                 m_PGridDims;
@@ -217,11 +199,32 @@ void PvGEMM(
     double beta, DistributedMatrix<T>& C
 );
 
+enum GEMM_OPT {
+    GEMM_OPT_NONE,
+    GEMM_OPT_TRANS,
+    GEMM_OPT_CONJ_TRANS
+};
+template <typename T>
+void PvGEMM(
+    GEMM_OPT transA, GEMM_OPT transB,
+    double alpha, const DistributedMatrix<T>& A, const DistributedMatrix<T>& B, 
+    double beta, DistributedMatrix<T>& C
+);
+
 template <typename T>
 void PvGEMV(
     double alpha, const DistributedMatrix<T>& A, const DistributedMatrix<T>& X, 
     double beta, DistributedMatrix<T>& Y
 );
+
+template <typename T>
+void PvGERQF(DistributedMatrix<T>& A, LocalMatrix<T>& Tau);
+
+template <typename T>
+void PvORMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, DistributedMatrix<T>& C);
+
+template <typename T>
+void PvUNMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, DistributedMatrix<T>& C);
 
 template <typename T>
 void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W, DistributedMatrix<T>& Z);

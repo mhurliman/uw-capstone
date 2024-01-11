@@ -39,6 +39,32 @@ namespace ops
         T* work, const int* lwork, ValueType<T>* rwork, const int* lrwork, int* info
     );
 
+    template <typename T>
+    void PvGERQF(
+        const int* M, const int* N, 
+        T* A, const int* ia, const int* ja, const int* descA,
+        T* tau, T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
+    void PvORMQR(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* C, const int* ic, const int* jc, const int* descC,
+        T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
+    void PvUNMQR(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* C, const int* ic, const int* jc, const int* descC,
+        T* work, const int* lwork, int* info
+    );
 
     template <typename T>
     void PvGEMM(

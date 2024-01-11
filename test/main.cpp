@@ -3,49 +3,24 @@
 #include <math.h>
 #include <iomanip>
 
-#include "DistributedMatrix.h"
+#include <DistributedMatrix.h>
 
-int2 CalcProcDims(int p)
+// Start with a square grid (sqrt(p)) and 
+int2 CalcProcessorGridDims(int p)
 {
     int d1 = static_cast<int>(ceilf(sqrtf(p)));
     for (; p % d1; --d1);
-    int d2 = p / d1;
 
-    return int2{ .col = std::max(d1, d2), .row = std::min(d1, d2) };
+    return int2{ .col = p / d1, .row = d1 };
 }
 
-int main(int argc, char* argv[])
+void TestPvHEEV(int context, int pid)
 {
-    // Grab MPI IDs
-    MPI_Init(&argc, &argv);
+    // Define block sizes
+    const int n = 100;
+    const int nb = 20;
 
-    int p;
-    MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &p));
-
-    int myid;
-    MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &myid));
-
-    int nameLen;
-    char procName[MPI_MAX_PROCESSOR_NAME]{};
-    MPI_CHECK(MPI_Get_processor_name(procName, &nameLen));
-
-    std::cout << "Process " << myid << " on " << procName << std::endl;
-
-    int2 procDims = CalcProcDims(p);
-
-    // Initialize the process grid
-    int context;
-    Cblacs_get(-1, 0, &context);
-
-    int2 id;
-    Cblacs_gridinit(&context, "R", procDims.row, procDims.col);
-    Cblacs_gridinfo(context, &procDims.row, &procDims.col, &id.row, &id.col);
-
-	// Define block sizes
-    const int n = 8;
-    const int nb = 3;
-
-    auto H = DistributedMatrix<c64>::RandomHermitian(context, procDims, id, n, nb, nb, 1);
+    auto H = DistributedMatrix<c64>::RandomHermitian(context, n, nb, nb, 1);
     auto Z = DistributedMatrix<c64>::Uninitialized(H);
     auto Wl = LocalMatrix<double>::Uninitialized(n, 1);
 
@@ -73,10 +48,61 @@ int main(int argc, char* argv[])
     }
 
     // Print error for each vector of Z
-    if (myid == 0)
+    if (pid == 0)
     {
         std::cout << T << std::endl;
     }
+}
+
+void TestPvGESRQ(int context, int pid)
+{
+    // Define block sizes
+    const int n = 10;
+    const int nb = 20;
+
+    Cblacs_barrier(context, "All");
+
+    //auto A = DistributedMatrix<double>::UniformRandom(context, n, n, nb, nb, 1);
+    auto A = DistributedMatrix<c64>::UniformRandom(context, n, n, nb, nb, 1);
+    auto C = DistributedMatrix<c64>::Identity(context, n, n, nb, nb);
+    auto Tau = LocalMatrix<c64>::Uninitialized(n, 1);
+
+    PvGERQF(A, Tau);
+    PvUNMQR(A, Tau, C);
+
+    auto I = DistributedMatrix<c64>::Identity(context, n, n, nb, nb);
+    PvGEMM(GEMM_OPT_NONE, GEMM_OPT_CONJ_TRANS, 1.0, C, C, 0.0, I);
+
+    std::cout << I << std::endl;
+}
+
+int main(int argc, char* argv[])
+{
+    // Grab MPI IDs
+    MPI_Init(&argc, &argv);
+
+    int pc;
+    MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &pc));
+
+    int pid;
+    MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &pid));
+
+    int nameLen;
+    char procName[MPI_MAX_PROCESSOR_NAME]{};
+    MPI_CHECK(MPI_Get_processor_name(procName, &nameLen));
+
+    std::cout << "Process " << pid << " on " << procName << std::endl;
+
+    // Initialize the process grid
+    int context;
+    Cblacs_get(-1, 0, &context);
+
+    int2 pgId;
+    int2 pgDims = CalcProcessorGridDims(pc);
+    Cblacs_gridinit(&context, "R", pgDims.row, pgDims.col);
+
+    //TestPvHEEV(context, pid);
+    TestPvGESRQ(context, pid);
     
     Cblacs_gridexit(context);
     MPI_Finalize();

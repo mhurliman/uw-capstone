@@ -40,6 +40,7 @@ struct TypeTraits<T, typename std::enable_if_t<std::is_fundamental_v<T>>> { usin
 template <typename T>
 using ValueType = typename TypeTraits<T>::type;
 
+
 extern "C" {
     /* Cblacs declarations */
     void Cblacs_pinfo(int* mypnum, int* nprocs);
@@ -179,6 +180,70 @@ extern "C" {
         c64* z, const int* iz, const int* jz, const int* descz,
         c64* work, const int* lwork, double* rwork, const int* lrwork, 
         int* info
+    );
+
+
+    // PvGERQF
+    void psgerqf_(
+        const int* M, const int* N, 
+        float* A, const int* ia, const int* ja, const int* descA,
+        float* tau, float* work, const int* lwork, int* info
+    );
+
+    void pdgerqf_(
+        const int* M, const int* N, 
+        double* A, const int* ia, const int* ja, const int* descA,
+        double* tau, double* work, const int* lwork, int* info
+    );
+
+    void pcgerqf_(
+        const int* M, const int* N, 
+        c32* A, const int* ia, const int* ja, const int* descA,
+        c32* tau, c32* work, const int* lwork, int* info
+    );
+
+    void pzgerqf_(
+        const int* M, const int* N, 
+        c64* A, const int* ia, const int* ja, const int* descA,
+        c64* tau, c64* work, const int* lwork, int* info
+    );
+
+    // PvORMQR
+    void psormqr_(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const float* A, const int* ia, const int* ja, const int* descA,
+        const float* tau, 
+        float* C, const int* ic, const int* jc, const int* descC,
+        float* work, const int* lwork, int* info
+    );
+
+    void pdormqr_(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const double* A, const int* ia, const int* ja, const int* descA,
+        const double* tau, 
+        double* C, const int* ic, const int* jc, const int* descC,
+        double* work, const int* lwork, int* info
+    );
+
+    // PvUNMQR
+    void pcunmqr_(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const c32* A, const int* ia, const int* ja, const int* descA,
+        const c32* tau, 
+        c32* C, const int* ic, const int* jc, const int* descC,
+        c32* work, const int* lwork, int* info
+    );
+
+    void pzunmqr_(
+        const char* side, const char* trans,
+        const int* M, const int* N, const int* K,
+        const c64* A, const int* ia, const int* ja, const int* descA,
+        const c64* tau, 
+        c64* C, const int* ic, const int* jc, const int* descC,
+        c64* work, const int* lwork, int* info
     );
 
 
