@@ -97,6 +97,11 @@ void GatherMatrix(int2 id, int2 pgDims, T* global, const MatDesc& desc, const T*
     }
 }
 
+template <typename T>
+void PrintValue(std::ostream& os, T v)
+{
+    os << std::setw(8) << std::setprecision(2) << FormatZeros(v, 1e-4) << " ";
+}
 
 template <typename T>
 void LocalMatrix<T>::Print(std::ostream& os) const
@@ -105,7 +110,7 @@ void LocalMatrix<T>::Print(std::ostream& os) const
     {
         for (int iCol = 0; iCol < m_dims.col; ++iCol)
         {
-            os << std::setw(4) << std::setprecision(2) << m_data[CMIDX(iRow, iCol, m_dims.row)] << " ";
+            PrintValue(os, m_data[CMIDX(iRow, iCol, m_dims.row)] );
         }
         os << std::endl;
     }
@@ -118,7 +123,7 @@ void LocalMatrix<T>::SetElements(InitializerFunc f)
     {
         for (int iRow = 0; iRow < m_dims.row; ++iRow)
         {
-            m_data[CMIDX(iRow, iCol, m_dims.row)] = f(int2{iCol, iRow});
+            m_data[CMIDX(iRow, iCol, m_dims.row)] = f({ .row = iRow, .col = iCol });
         }
     }
 }
@@ -130,16 +135,16 @@ void LocalMatrix<T>::CustomOp(CustomOpFunc f)
     {
         for (int iRow = 0; iRow < m_dims.row; ++iRow)
         {
-            f(int2{iCol, iRow}, m_data[CMIDX(iRow, iCol, m_dims.row)]);
+            f({ .row = iRow, .col = iCol }, m_data[CMIDX(iRow, iCol, m_dims.row)]);
         }
     }
 }
 
 template <typename T>
-LocalMatrix<T> LocalMatrix<T>::Uninitialized(int numRows, int numCols)
+LocalMatrix<T> LocalMatrix<T>::Uninitialized(int2 dims)
 {
     LocalMatrix<T> A;
-    A.Init(numRows, numCols);
+    A.Init(dims);
     return A;
 }
 
@@ -151,10 +156,30 @@ LocalMatrix<T> LocalMatrix<T>::Uninitialized(const LocalMatrix<U>& dimsSpec)
 }
 
 template <typename T>
-LocalMatrix<T> LocalMatrix<T>::Initialized(int numRows, int numCols, InitializerFunc f)
+LocalMatrix<T> LocalMatrix<T>::Initialized(int2 dims, InitializerFunc f)
 {
-    auto A = Uninitialized(numRows, numCols);
+    auto A = Uninitialized(dims);
     A.SetElements(f);
+    return A;
+}
+
+
+template <typename T>
+LocalMatrix<T> LocalMatrix<T>::Initialized(int2 dims, const std::initializer_list<T>& rowMajorList)
+{
+    assert(dims.Count() == rowMajorList.size());
+
+    auto A = Uninitialized(dims);
+
+    int i = 0;
+    for (auto it = rowMajorList.begin(); it < rowMajorList.end(); ++it, ++i)
+    {
+        int row = i / dims.col;
+        int col = i - row * dims.col;
+
+        A.m_data[CMIDX(row, col, dims.row)] = *it;
+    }
+
     return A;
 }
 
@@ -163,20 +188,18 @@ template <typename U>
 LocalMatrix<T> LocalMatrix<T>::Initialized(const LocalMatrix<U>& data)
 {
     auto A = Uninitialized(data);
-    A.SetElements([&](int2 gid)
-    {
-        return T(data.m_data[CMIDX(gid.row, gid.col, data.m_dims.row)]); // Constructor conversion
-    });
+    std::memcpy(A.m_data.get(), data.m_data.get(), A.Bytes());
     return A;
 }
 
-template <typename T>
-void LocalMatrix<T>::Init(int numRows, int numCols)
-{
-    assert(numRows > 0 & numCols > 0);
 
-    m_data.reset(new T[numRows * numCols]);
-    m_dims = { numCols, numRows };
+template <typename T>
+void LocalMatrix<T>::Init(int2 dims)
+{
+    assert(dims.ValidDims());
+
+    m_data.reset(new T[dims.Count()]);
+    m_dims = dims;
 }
 
 
@@ -186,7 +209,7 @@ LocalMatrix<T> DistributedMatrix<T>::ToLocalMatrix(void) const
     LocalMatrix<T> m;
     if (IsRootProcess())
     {
-        m = LocalMatrix<T>::Uninitialized(m_desc.M, m_desc.N);
+        m = LocalMatrix<T>::Uninitialized({ m_desc.M, m_desc.N });
     }
 
     GatherMatrix<T>(m_PGridId, m_PGridDims, m.Data(), m_desc, m_localData.get(), m_localDims);
@@ -195,11 +218,11 @@ LocalMatrix<T> DistributedMatrix<T>::ToLocalMatrix(void) const
 
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::Submatrix(int numRows, int numCols, int rowIndex, int colIndex) const
+DistributedMatrix<T> DistributedMatrix<T>::Submatrix(int2 dims, int2 indices) const
 {
     DistributedMatrix<T> A = *this;
-    A.m_subDims = int2 { .col = numCols, .row = numRows };
-    A.m_subIndex = int2::OneBased(colIndex, rowIndex);
+    A.m_subDims = dims;
+    A.m_subIndex = indices.ToOneBased();
 
     return A;
 }
@@ -208,13 +231,13 @@ template <typename T>
 DistributedMatrix<T> DistributedMatrix<T>::SubmatrixRow(int rowIndex) const
 {
     assert(false); // Unimplemented - requires proper handling of 'transpose' & 'inc'
-    return Submatrix(1, m_desc.N, rowIndex, 0);
+    return Submatrix({ 1, m_desc.N }, { rowIndex, 0 });
 }
 
 template <typename T>
 DistributedMatrix<T> DistributedMatrix<T>::SubmatrixColumn(int colIndex) const
 {
-    return Submatrix(m_desc.M, 1, 0, colIndex);
+    return Submatrix({ m_desc.M, 1 }, { 0, colIndex });
 }
 
 template <typename T>
@@ -246,54 +269,113 @@ void DistributedMatrix<T>::CustomLocalOp(CustomOpFunc f)
 }
 
 template <typename T>
-void DistributedMatrix<T>::Init(
-    int context,
-    int numRows, int numCols, int rowBlockSize, int colBlockSize
-)
+void DistributedMatrix<T>::Init(int context, int2 dims, int2 blockSize)
 {
     Cblacs_gridinfo(context, &m_PGridDims.row, &m_PGridDims.col, &m_PGridId.row, &m_PGridId.col);
-    
-    const int zero = 0;
-    m_localDims.row = numroc_(&numRows, &rowBlockSize, &m_PGridId.row, &zero, &m_PGridDims.row);
-    m_localDims.col = numroc_(&numCols, &colBlockSize, &m_PGridId.col, &zero, &m_PGridDims.col);
 
-    m_subDims = int2{ .col = numCols, .row = numRows };
+    const int zero = 0;
+    m_localDims.row = numroc_(&dims.row, &blockSize.row, &m_PGridId.row, &zero, &m_PGridDims.row);
+    m_localDims.col = numroc_(&dims.col, &blockSize.col, &m_PGridId.col, &zero, &m_PGridDims.col);
+
+    m_localDims.row = std::max(1, m_localDims.row);
+    m_localDims.col = std::max(1, m_localDims.col);
+
+    m_subDims = dims;
     m_subIndex = int2::One(); // A horrifically base-one system
 
-    if (m_localDims.row > 0 && m_localDims.col > 0)
-    {
-        m_localData.reset(new T[m_localDims.row * m_localDims.col]);
-    }
-    else
-    {
-        m_localData.reset(new T[1]);
-    }
+    int2 allocDims = m_localDims;
+    if (allocDims.row == 1)
+        allocDims.col = dims.col;
+    else if (allocDims.col == 1)
+        allocDims.row = dims.row;
+
+    m_localData.reset(new T[allocDims.Count()]);
+
     assert(m_localData.get() != nullptr);
 
     int info;
-    descinit_(m_desc, &numRows, &numCols, &rowBlockSize, &colBlockSize, &zero, &zero, &context, &m_localDims.row, &info);
+    descinit_(
+        m_desc, 
+        &m_subDims.row, &m_subDims.col, 
+        &blockSize.row, &blockSize.col, 
+        &zero, &zero, 
+        &context, 
+        &m_localDims.row, 
+        &info
+    );
     assert(info >= 0);
 }
 
 template <typename T>
 void DistributedMatrix<T>::PrintLocal(std::ostream& os) const
 {
-    for (int i = 0; i < m_PGridDims.NumProcs(); ++i)
+#if 1
+    int pid = m_PGridId.FlatCM(m_PGridDims.row);
+
+    for (int i = 0; i < m_PGridDims.Count(); ++i)
     {
-        if (m_PGridId.Flat(m_PGridDims.row) == i)
+        if (pid == i)
         {
-            for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+            std::cout << "PID " << pid << ":  " << m_localDims << std::endl;
+
+            for (int iRow = 0; iRow < m_localDims.row; ++iRow)
             {
-                for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+                for (int iCol = 0; iCol < m_localDims.col; ++iCol)
                 {
-                    os << std::setw(4) << std::setprecision(2) << m_localData[CMIDX(iRow, iCol, m_localDims.row)] << " ";
+                    PrintValue(os, m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
                 }
                 os << std::endl;
             }
         }
 
+        os.flush();
         Cblacs_barrier(m_desc.ctxt, "All");
     }
+#else
+
+    Cblacs_barrier(m_desc.ctxt, "All");
+    for (int iRow = 0; iRow < m_desc.M; ++iRow)
+    {
+        for (int iCol = 0; iCol < m_desc.N; iCol += m_desc.Nb)
+        {
+            int2 pgid;
+            int2 id;
+            GlobalToLocal(iRow, iCol, m_PGridDims, m_desc, pgid, id);
+
+            if (pgid == m_PGridId)
+            {
+                int iEnd = std::min(m_desc.N, iCol + m_desc.Nb);
+                for (int iColl = iCol; iColl < iEnd; ++iColl, ++id.col)
+                {
+                    T z = m_localData[CMIDX(id.row, id.col, m_localDims.row)];
+                    // T v {id.row, id.col};
+                    // T m {pgid.row, pgid.col};
+                    PrintValue(os, z);
+                    os.flush();
+                }
+            }
+            
+            Cblacs_barrier(m_desc.ctxt, "All");
+        }
+
+        if (IsRootProcess())
+        {
+            os << std::endl;
+            
+            os.flush();
+        }
+
+        Cblacs_barrier(m_desc.ctxt, "All");
+    }
+
+    if (IsRootProcess())
+    {
+        os << std::endl;
+        os.flush();
+    }
+
+    Cblacs_barrier(m_desc.ctxt, "All");
+#endif
 }
 
 template <typename T>
@@ -303,24 +385,41 @@ void DistributedMatrix<T>::PrintGlobal(std::ostream& os) const
 
     if (IsRootProcess())
     {
-        for (int r = 0; r < m_subDims.row; ++r) 
-        {
-            for (int c = 0; c < m_subDims.col; ++c) 
-            {
-                os << std::setw(4) << std::setprecision(2) << m.m_data[CMIDX(r, c, m_desc.M)] << " ";
-            }
-            os << std::endl;
-        }
+        os << m << std::endl;
     }
 }
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(
-    int context, int numRows, int numCols, int rowBlockSize, int colBlockSize
-)
+DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(int context, int numRows, int blockSize)
 {
     DistributedMatrix<T> A;
-    A.Init(context, numRows, numCols, rowBlockSize, colBlockSize);
+    A.Init(context, numRows, 1, blockSize, 1);
+    return A;
+}
+
+template <typename T>
+DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(int context, int2 dims, int2 blockSize)
+{
+    DistributedMatrix<T> A;
+    A.Init(context, dims, blockSize);
+    return A;
+}
+
+template <typename T>
+DistributedMatrix<T> DistributedMatrix<T>::Zeros(int context, int numRows, int blockSize)
+{
+    DistributedMatrix<T> A;
+    A.Init(context, { numRows, 1 }, { blockSize, 1 });
+    std::memset(A.Data(), 0, A.Bytes());
+    return A;
+}
+
+template <typename T>
+DistributedMatrix<T> DistributedMatrix<T>::Zeros(int context, int2 dims, int2 blockSize)
+{
+    DistributedMatrix<T> A;
+    A.Init(context, dims, blockSize);
+    std::memset(A.Data(), 0, A.Bytes());
     return A;
 }
 
@@ -331,37 +430,40 @@ DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(const DistributedMatrix
     auto& desc = dimsSpec.Desc();
 
     DistributedMatrix<T> A;
-    A.Init(desc.ctxt, desc.M, desc.N, desc.Mb, desc.Nb);
+    A.Init(desc.ctxt, { desc.M, desc.N }, { desc.Mb, desc.Nb });
     return A;
 }
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::Initialized(
-    int context, 
-    int numRows, int numCols, int rowBlockSize, int colBlockSize,
-    InitializerFunc f
-)
+DistributedMatrix<T> DistributedMatrix<T>::Initialized(int context, int2 dims, int2 blockSize, InitializerFunc f)
 {
-    auto A = Uninitialized(context, numRows, numCols, rowBlockSize, colBlockSize);
+    auto A = Uninitialized(context, dims, blockSize);
     A.SetElements(f);
     return A;
 }
 
 template <typename T>
-template <typename U>
-DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(
-    int context, 
-    int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data
-)
+DistributedMatrix<T> DistributedMatrix<T>::Initialized(int context, int2 dims, int2 blockSize, const std::initializer_list<T>& rowMajorList)
 {
-    return Uninitialized(context, data.m_dims.row, data.m_dims.col, rowBlockSize, colBlockSize);
+    auto m = LocalMatrix<T>::Initialized(dims, rowMajorList);
+
+    auto A = Uninitialized(context, dims, blockSize);
+    A.SetElements([&](int2 gid) { return m[gid.FlatCM(dims.row)]; });
+    return A;
 }
 
 template <typename T>
 template <typename U>
-DistributedMatrix<T> DistributedMatrix<T>::Initialized(int context, int rowBlockSize, int colBlockSize, const LocalMatrix<U>& data)
+DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(int context, int2 blockSize, const LocalMatrix<U>& data)
 {
-    auto A = Uninitialized<U>(context, rowBlockSize, colBlockSize, data);
+    return Uninitialized(context, data.m_dims, blockSize);
+}
+
+template <typename T>
+template <typename U>
+DistributedMatrix<T> DistributedMatrix<T>::Initialized(int context, int2 blockSize, const LocalMatrix<U>& data)
+{
+    auto A = Uninitialized<U>(context, blockSize, data);
 
     LocalMatrix<T> m = LocalMatrix<T>::Initialized(data);
     ScatterMatrix<T>(A.ProcGridId(), A.ProcGridDims(), m.Data(), A.Desc(), A.Data(), A.m_localDims);
@@ -370,33 +472,23 @@ DistributedMatrix<T> DistributedMatrix<T>::Initialized(int context, int rowBlock
 }
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::Identity(
-    int context, 
-    int numRows, int numCols, int rowBlockSize, int colBlockSize
-)
+DistributedMatrix<T> DistributedMatrix<T>::Identity(int context, int2 dims, int2 blockSize)
 {
-    return Initialized(
-        context, numRows, numCols, rowBlockSize, colBlockSize, 
-        [](int2 gid) { return double(gid.col == gid.row); }
-    );
+    return Initialized(context, dims, blockSize, [](int2 gid) { return double(gid.col == gid.row); });
 }
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::UniformRandom(
-    int context, 
-    int numRows, int numCols, int rowBlockSize, int colBlockSize,
-    int seed, double range
-)
+DistributedMatrix<T> DistributedMatrix<T>::UniformRandom(int context, int2 dims, int2 blockSize, int seed, double range)
 {
     int state = 0;
     Random<T> r(seed);
 
     return Initialized(
-        context, numRows, numCols, rowBlockSize, colBlockSize, 
+        context, dims, blockSize, 
         [&](int2 gid) 
         {
             // Discard up to this global index
-            for (; state < gid.Flat(numRows); ++state)
+            for (; state < gid.FlatCM(dims.row); ++state)
             {
                 r();
             }
@@ -410,17 +502,14 @@ DistributedMatrix<T> DistributedMatrix<T>::UniformRandom(
 
 template <typename T>
 template <typename U>
-DistributedMatrix<T> DistributedMatrix<T>::Diagonal(int context, int rowBlockSize, int colBlockSize, const LocalMatrix<U>& X)
+DistributedMatrix<T> DistributedMatrix<T>::Diagonal(int context, int2 blockSize, const LocalMatrix<U>& X)
 {
     assert(X.m_dims.col == 1);
 
     DistributedMatrix<T> A;
-    A.Init(context, X.m_dims.row, X.m_dims.row, rowBlockSize, colBlockSize);
+    A.Init(context, X.m_dims, blockSize);
 
-    A.SetElements([&](int2 gid)
-    { 
-        return gid.col == gid.row ? X.m_data[gid.col] : 0; 
-    });
+    A.SetElements([&](int2 gid) { return gid.col == gid.row ? X.m_data[gid.col] : 0; });
 
     return A;
 }
@@ -429,37 +518,36 @@ template <typename T>
 DistributedMatrix<T> DistributedMatrix<T>::Duplicate(const DistributedMatrix<T>& A)
 {
     DistributedMatrix<T> B;
-    B.Init(A.Desc().ctxt, A.Desc().M, A.Desc().N, A.Desc().Mb, A.Desc().Nb);
+    B.Init(A.Desc().ctxt, A.Dims(), A.BlockSize());
 
     Duplicate(A, B);
     return B;
 }
 
 template <typename T>
-void DistributedMatrix<T>::Duplicate(const DistributedMatrix<T>& src, DistributedMatrix<T>& dest)
+void DistributedMatrix<T>::Duplicate(const DistributedMatrix<T>& src, DistributedMatrix<T>& dst)
 {
     assert(
-        src.NumCols() == dest.NumCols() &&
-        src.NumRows() == dest.NumRows()
+        src.NumCols() == dst.NumCols() &&
+        src.NumRows() == dst.NumRows()
     );
 
-    const int one = 1;
-    ops::PvLACPY("A", &src.Desc().M, &src.Desc().M, src.Data(), &one, &one, src.Desc(), dest.Data(), &one, &one, dest.Desc());
+    ops::PvLACPY(
+        "A", &src.NumRows(), &src.NumCols(), 
+        src.Data(), &src.IndexRow(), &src.IndexCol(), src.Desc(), 
+        dst.Data(), &dst.IndexRow(), &dst.IndexCol(), dst.Desc()
+    );
 }
 
 
 template <typename T>
-DistributedMatrix<T> DistributedMatrix<T>::RandomHermitian(
-    int context,
-    int N, int rowBlockSize, int colBlockSize,
-    int seed
-)
+DistributedMatrix<T> DistributedMatrix<T>::RandomHermitian(int context, int dim, int2 blockSize, int seed)
 {
     int state = 0;
     Random<T> r(seed);
 
     auto A = Initialized(
-        context, N, N, rowBlockSize, colBlockSize, 
+        context, { dim, dim }, blockSize, 
         [&](int2 gid) 
         {
             if (gid.col > gid.row)
@@ -468,7 +556,7 @@ DistributedMatrix<T> DistributedMatrix<T>::RandomHermitian(
             }
 
             // Discard up to this global index
-            for (; state < gid.Flat(N); ++state)
+            for (; state < gid.FlatCM(dim); ++state)
             {
                 r();
             }
@@ -489,12 +577,7 @@ DistributedMatrix<T> DistributedMatrix<T>::RandomHermitian(
     auto B = Duplicate(A);
 
     // Tranpose conjugate 
-    const double one = 1.0;
-    ops::PvTRANC<T>(
-        &A.NumRows(), &A.NumCols(), 
-        &one, A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), 
-        &one, B.Data(), &B.IndexRow(), &B.IndexCol(), B.Desc()
-    );
+    PvTRANC(1.0, A, 1.0, B);
 
     return B;
 }
@@ -505,12 +588,12 @@ void PvGEMM(
     double beta, DistributedMatrix<T>& C
 )
 {
-    PvGEMM(GEMM_OPT_NONE, GEMM_OPT_NONE, alpha, A, B, beta, C);
+    PvGEMM(TRANS_OPT_NONE, TRANS_OPT_NONE, alpha, A, B, beta, C);
 }
 
 template <typename T>
 void PvGEMM(
-    GEMM_OPT transA, GEMM_OPT transB,
+    TRANS_OPT transA, TRANS_OPT transB,
     double alpha, const DistributedMatrix<T>& A, const DistributedMatrix<T>& B, 
     double beta, DistributedMatrix<T>& C
 )
@@ -523,13 +606,12 @@ void PvGEMM(
 
     if (std::is_fundamental_v<T>)
     {
-        transA = std::min(GEMM_OPT_TRANS, transA);
-        transB = std::min(GEMM_OPT_TRANS, transB);
+        transA = std::min(TRANS_OPT_TRANS, transA);
+        transB = std::min(TRANS_OPT_TRANS, transB);
     }
 
-    const char* opts = "NTC";
+    const char* opts = "NTC"; // N - no-op; T - transpose; C - conjugate transpose
 
-    const int one = 1;
     ops::PvGEMM<T>(
         &opts[transA], &opts[transB], 
         &A.Desc().M, &B.Desc().N, &A.Desc().N, 
@@ -552,21 +634,21 @@ void PvGEMV(
         X.NumRows() == Y.NumRows()
     );
 
-	const int one = 1;
+    const int inc = 1;
 	ops::PvGEMV<T>(
         "N", &A.Desc().M, &A.Desc().N, 
         &alpha,
         A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(),
-		X.Data(), &X.IndexRow(), &X.IndexCol(), X.Desc(), &one,
+		X.Data(), &X.IndexRow(), &X.IndexCol(), X.Desc(), &inc,
         &beta,
-		Y.Data(), &Y.IndexRow(), &Y.IndexCol(), Y.Desc(), &one
+		Y.Data(), &Y.IndexRow(), &Y.IndexCol(), Y.Desc(), &inc
         );
 }
 
 template <typename T>
-void PvGERQF(DistributedMatrix<T>& A, LocalMatrix<T>& Tau)
+void PvGERQF(DistributedMatrix<T>& A, DistributedMatrix<T>& Tau)
 {
-    assert(A.NumRows() == Tau.NumRows());
+    assert(A.NumRows() <= Tau.NumRows());
 
     T workSize;
     int lwork = -1;
@@ -579,10 +661,8 @@ void PvGERQF(DistributedMatrix<T>& A, LocalMatrix<T>& Tau)
         &workSize, &lwork, &info
     );
 
-    lwork = static_cast<int>(real(workSize));
-
-    std::unique_ptr<T[]> work;
-    work.reset(new T[lwork]);
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
 
     ops::PvGERQF(
         &A.NumRows(), &A.NumCols(),
@@ -593,12 +673,14 @@ void PvGERQF(DistributedMatrix<T>& A, LocalMatrix<T>& Tau)
 }
 
 template <typename T>
-void PvORMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, DistributedMatrix<T>& C)
+void PvORMQR(const DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau, DistributedMatrix<T>& C)
 {
+    static_assert(std::is_floating_point_v<T>);
+
     // Assume result is C * Q for now (operation 'R')
     // So N_C == M_Q, and final matrix is M_C x N_Q
     assert(
-        A.NumRows() == Tau.NumRows() &&
+        A.NumRows() <= Tau.NumRows() &&
         A.NumRows() == C.NumCols()
     );
 
@@ -606,7 +688,6 @@ void PvORMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
     T workSize;
     int lwork = -1;
     int info = 0;
-
 
     ops::PvORMQR<T>(
         "R", "N",
@@ -617,10 +698,8 @@ void PvORMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
         &workSize, &lwork, &info
     );
 
-    lwork = static_cast<int>(workSize);
-
-    std::unique_ptr<T[]> work;
-    work.reset(new T[lwork]);
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
 
     ops::PvORMQR(
         "R", "N",
@@ -633,8 +712,10 @@ void PvORMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
 }
 
 template <typename T>
-void PvUNMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, DistributedMatrix<T>& C)
+void PvUNMQR(const DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau, DistributedMatrix<T>& C)
 {
+    static_assert(std::is_compound_v<T> && std::is_fundamental_v<ValueType<T>>);
+
     // Assume result is C * Q for now (operation 'R')
     // So N_C == M_Q, and final matrix is M_C x N_Q
     assert(
@@ -647,7 +728,6 @@ void PvUNMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
     int lwork = -1;
     int info = 0;
 
-
     ops::PvUNMQR<T>(
         "R", "N",
         &A.NumRows(), &A.NumCols(), &numRefl,
@@ -657,10 +737,8 @@ void PvUNMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
         &workSize, &lwork, &info
     );
 
-    lwork = static_cast<int>(real(workSize));
-
-    std::unique_ptr<T[]> work;
-    work.reset(new T[lwork]);
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
 
     ops::PvUNMQR(
         "R", "N",
@@ -672,7 +750,117 @@ void PvUNMQR(const DistributedMatrix<T>& A, const LocalMatrix<T>& Tau, Distribut
     );
 }
 
+template <typename T>
+void PvORGQR(DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau)
+{
+    static_assert(std::is_floating_point_v<T>);
+    assert(A.NumRows() <= Tau.NumRows());
 
+    int numRefl = std::min(A.NumRows(), A.NumCols());
+
+    T workSize;
+    int lwork = -1;
+    int info = 0;
+
+    ops::PvORGQR<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        nullptr, &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        nullptr, &workSize, &lwork, &info
+    );
+
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+
+    ops::PvORGQR<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        Tau.Data(), work.get(), &lwork, &info
+    );
+}
+
+template <typename T>
+void PvUNGQR(DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau)
+{
+    static_assert(std::is_compound_v<T> && std::is_fundamental_v<ValueType<T>>);
+
+    assert(A.NumRows() == Tau.NumRows());
+
+    int numRefl = std::min(A.NumRows(), A.NumCols());
+    T workSize;
+    int lwork = -1;
+    int info = 0;
+
+    ops::PvUNGQR<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        nullptr, &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        nullptr, &workSize, &lwork, &info
+    );
+
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+
+    ops::PvUNGQR(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        Tau.Data(), work.get(), &lwork, &info
+    );
+}
+
+template <typename T>
+void PvORGR2(DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau)
+{
+    static_assert(std::is_floating_point_v<T>);
+    assert(A.NumRows() <= Tau.NumRows());
+
+    int numRefl = std::min(A.NumRows(), A.NumCols());
+
+    T workSize;
+    int lwork = -1;
+    int info = 0;
+
+    ops::PvORGR2<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        nullptr, &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        nullptr, &workSize, &lwork, &info
+    );
+
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+
+    ops::PvORGR2<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        Tau.Data(), work.get(), &lwork, &info
+    );
+}
+
+template <typename T>
+void PvUNGR2(DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau)
+{
+    static_assert(std::is_compound_v<T> && std::is_fundamental_v<ValueType<T>>);
+
+    assert(A.NumRows() == Tau.NumRows());
+
+    int numRefl = std::min(A.NumRows(), A.NumCols());
+    T workSize;
+    int lwork = -1;
+    int info = 0;
+
+    ops::PvUNGR2<T>(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        nullptr, &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        nullptr, &workSize, &lwork, &info
+    );
+
+    lwork = ToIndex(workSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+
+    ops::PvUNGR2(
+        &A.NumRows(), &A.NumCols(), &numRefl,
+        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), 
+        Tau.Data(), work.get(), &lwork, &info
+    );
+}
 template <typename T>
 void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W, DistributedMatrix<T>& Z)
 {
@@ -700,13 +888,10 @@ void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W, DistributedMa
         &workSize, &lwork, &rworkSize, &lrwork, &info
     );
 
-    lwork = static_cast<int>(real(workSize));
-    lrwork = static_cast<int>(rworkSize);
-
-    std::unique_ptr<T[]> work;
-    std::unique_ptr<U[]> rwork;
-    work.reset(new T[lwork]);
-    rwork.reset(new U[lrwork]);
+    lwork = ToIndex(workSize);
+    lrwork = ToIndex(rworkSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+    auto rwork = std::unique_ptr<U[]>(new U[lrwork]);
 
     ops::PvHEEV(
         "V", "U", &A.NumRows(), 
@@ -738,13 +923,10 @@ void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W)
         &workSize, &lwork, &rworkSize, &lrwork, &info
     );
 
-    lwork = static_cast<int>(real(workSize));
-    lrwork = static_cast<int>(rworkSize);
-
-    std::unique_ptr<T[]> work;
-    std::unique_ptr<U[]> rwork; 
-    work.reset(new T[lwork]);
-    rwork.reset(new U[lrwork]);
+    lwork = ToIndex(workSize);
+    lrwork = ToIndex(rworkSize);
+    auto work = std::unique_ptr<T[]>(new T[lwork]);
+    auto rwork = std::unique_ptr<U[]>(new U[lrwork]);
 
     ops::PvHEEV(
         "N", "U", &A.NumRows(), 
@@ -756,7 +938,7 @@ void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W)
 }
 
 template <typename T>
-void PvTRAN(double a, const DistributedMatrix<T>& A, double b, DistributedMatrix<T>& C)
+void PvTRAN(ValueType<T> a, const DistributedMatrix<T>& A, ValueType<T> b, DistributedMatrix<T>& C)
 {
     assert(
         A.NumRows() == C.NumRows() &&
@@ -771,7 +953,7 @@ void PvTRAN(double a, const DistributedMatrix<T>& A, double b, DistributedMatrix
 }
 
 template <typename T>
-void PvTRANU(double a, const DistributedMatrix<T>& A, double b, DistributedMatrix<T>& C)
+void PvTRANU(ValueType<T> a, const DistributedMatrix<T>& A, ValueType<T> b, DistributedMatrix<T>& C)
 {
     assert(
         A.NumRows() == C.NumRows() &&
@@ -786,7 +968,7 @@ void PvTRANU(double a, const DistributedMatrix<T>& A, double b, DistributedMatri
 }
 
 template <typename T>
-void PvTRANC(double a, const DistributedMatrix<T>& A, double b, DistributedMatrix<T>& C)
+void PvTRANC(ValueType<T> a, const DistributedMatrix<T>& A, ValueType<T> b, DistributedMatrix<T>& C)
 {
     assert(
         A.NumRows() == C.NumRows() &&
@@ -902,8 +1084,8 @@ void PvLACPY(const DistributedMatrix<T>& A, DistributedMatrix<T>& B)
     ops::PvLACPY(
         "N", // 'U' - copy upper-tri, 'L' - copy lower-tri, 'N' - copy all
         &A.NumRows(), &A.NumCols(),
-        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(), &inc,
-        B.Data(), &B.IndexRow(), &B.IndexCol(), B.Desc(), &inc
+        A.Data(), &A.IndexRow(), &A.IndexCol(), A.Desc(),
+        B.Data(), &B.IndexRow(), &B.IndexCol(), B.Desc()
     );
 }
 

@@ -67,6 +67,38 @@ namespace ops
     );
 
     template <typename T>
+    void PvORGQR(
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
+    void PvUNGQR(
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
+    void PvORGR2(
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
+    void PvUNGR2(
+        const int* M, const int* N, const int* K,
+        const T* A, const int* ia, const int* ja, const int* descA,
+        const T* tau, 
+        T* work, const int* lwork, int* info
+    );
+
+    template <typename T>
     void PvGEMM(
         const char* transa, const char* transb,
         const int* m, const int* n, const int* k,

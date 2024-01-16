@@ -261,6 +261,102 @@ namespace ops
         pzunmqr_(side, trans, M, N, K, A, ia, ja, descA, tau, C, ic, jc, descC, work, lwork, info);
     }
 
+    
+    // -----------------------------
+    // PvORGQR
+
+    template <>
+    void PvORGQR<float>(
+        const int* M, const int* N, const int* K,
+        const float* A, const int* ia, const int* ja, const int* descA,
+        const float* tau, float* work, const int* lwork, int* info
+    )
+    {
+        psorgqr_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvORGQR<double>(
+        const int* M, const int* N, const int* K,
+        const double* A, const int* ia, const int* ja, const int* descA,
+        const double* tau, double* work, const int* lwork, int* info
+    )
+    {
+        pdorgqr_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+
+    // -----------------------------
+    // PvUNGQR
+
+    template <>
+    void PvUNGQR<c32>(
+        const int* M, const int* N, const int* K,
+        const c32* A, const int* ia, const int* ja, const int* descA,
+        const c32* tau, c32* work, const int* lwork, int* info
+    )
+    {
+        pcungqr_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvUNGQR<c64>(
+        const int* M, const int* N, const int* K,
+        const c64* A, const int* ia, const int* ja, const int* descA,
+        const c64* tau, c64* work, const int* lwork, int* info
+    )
+    {
+        pzungqr_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    
+    // -----------------------------
+    // PvORGR2
+
+    template <>
+    void PvORGR2<float>(
+        const int* M, const int* N, const int* K,
+        const float* A, const int* ia, const int* ja, const int* descA,
+        const float* tau, float* work, const int* lwork, int* info
+    )
+    {
+        psorgr2_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvORGR2<double>(
+        const int* M, const int* N, const int* K,
+        const double* A, const int* ia, const int* ja, const int* descA,
+        const double* tau, double* work, const int* lwork, int* info
+    )
+    {
+        pdorgr2_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+
+    // -----------------------------
+    // PvUNGR2
+
+    template <>
+    void PvUNGR2<c32>(
+        const int* M, const int* N, const int* K,
+        const c32* A, const int* ia, const int* ja, const int* descA,
+        const c32* tau, c32* work, const int* lwork, int* info
+    )
+    {
+        pcungr2_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
+    template <>
+    void PvUNGR2<c64>(
+        const int* M, const int* N, const int* K,
+        const c64* A, const int* ia, const int* ja, const int* descA,
+        const c64* tau, c64* work, const int* lwork, int* info
+    )
+    {
+        pzungr2_(M, N, K, A, ia, ja, descA, tau, work, lwork, info);
+    }
+
 
     // -----------------------------
     // PvGEMM

@@ -5,7 +5,7 @@
 
 #include <DistributedMatrix.h>
 
-int2 CalcProcDims(int p)
+int2 CalcProcessorGridDims(int p)
 {
     int d1 = static_cast<int>(ceilf(sqrtf(p)));
     for (; p % d1; --d1);
@@ -41,7 +41,7 @@ int main(int argc, char* argv[])
     Cblacs_get(-1, 0, &context);
 
     int2 id;
-    int2 procDims = CalcProcDims(p);
+    int2 procDims = CalcProcessorGridDims(p);
     Cblacs_gridinit(&context, "R", procDims.row, procDims.col);
     Cblacs_gridinfo(context, &procDims.row, &procDims.col, &id.row, &id.col);
 

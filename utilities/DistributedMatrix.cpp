@@ -1,29 +1,35 @@
 #include "DistributedMatrix.h"
 
+
+// 1D-BC Local to Global Index Transform
+int LocalToGlobal(int localIndex, int pgDim, int pgId, int blockSize)
+{
+    return (localIndex % blockSize) + (localIndex / blockSize) * pgDim * blockSize + (pgId * blockSize);
+}
+
 // 2D-BC Local to Global Index Transform
 int2 LocalToGlobal(int localRowIdx, int localColIdx, int2 pgDims, int2 pgId, const MatDesc& desc)
 {
-    const int zero = 0;
-    return int2{
-        .col = indxl2g_(&localColIdx, &desc.Nb, &pgId.col, &zero, &pgDims.col),
-        .row = indxl2g_(&localRowIdx, &desc.Mb, &pgId.row, &zero, &pgDims.row)
+    return int2 {
+        .row = LocalToGlobal(localRowIdx, pgDims.row, pgId.row, desc.Mb),
+        .col = LocalToGlobal(localColIdx, pgDims.col, pgId.col, desc.Nb)
     };
+}
+
+// 1D-BC Global to Local Index Transform
+void GlobalToLocal(int globalIndex, int pgDim, int blockSize, int& pgId, int& localIndex)
+{
+    pgId = (globalIndex / blockSize) % pgDim;
+    localIndex = (globalIndex / (pgDim * blockSize)) * blockSize + globalIndex % blockSize;
 }
 
 // 2D-BC Global to Local Index Transform
 void GlobalToLocal(int globalRowIdx, int globalColIdx, int2 pgDims, const MatDesc& desc, int2& pgId, int2& localId)
 {
-    const int zero = 0;
-    pgId = int2 {
-        .col = indxg2p_(&globalColIdx, &desc.Nb, &zero, &zero, &pgDims.col),
-        .row = indxg2p_(&globalRowIdx, &desc.Mb, &zero, &zero, &pgDims.row),
-    };
-
-    localId = int2 {
-        .col = indxg2l_(&globalColIdx, &desc.Nb, &zero, &zero, &pgDims.col),
-        .row = indxg2l_(&globalRowIdx, &desc.Mb, &zero, &zero, &pgDims.row),
-    };
+    GlobalToLocal(globalRowIdx, pgDims.row, desc.Mb, pgId.row, localId.row);
+    GlobalToLocal(globalColIdx, pgDims.col, desc.Nb, pgId.col, localId.col);
 }
+
 
 std::ostream& operator<<(std::ostream& os, c32 x)
 {
