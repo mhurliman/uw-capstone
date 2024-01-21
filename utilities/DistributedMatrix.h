@@ -31,6 +31,7 @@ struct int2
     static int2 One(void) { return int2 { 1, 1 }; }
     static int2 OneBased(int2 dims) { return dims.ToOneBased(); }
 
+    inline int operator[](int index) const { return (index & 0x1) == 0 ? row : col; };
     inline int2 operator-(void) const { return { .row = -row, .col = -col }; }
     inline bool operator==(int2 rhs) const { return std::memcmp(this, &rhs, sizeof(int2)) == 0; }
     inline int2 operator+(int2 rhs) const { return { .row = row + rhs.row, .col = col + rhs.col }; }
@@ -157,7 +158,7 @@ public:
     DistributedMatrix<T> SubmatrixColumn(int colIndex) const;
 
     ValueType<T> OneNorm(void) const;
-    ValueType<T> InfNorm(void) const;
+    ValueType<T> InfinityNorm(void) const;
     ValueType<T> EuclideanNorm(void) const;
 
     using InitializerFunc = std::function<T(int2)>;

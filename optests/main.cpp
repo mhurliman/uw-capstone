@@ -168,10 +168,9 @@ void TestOneNorm(int context, int pc, int pid, int n, int nb)
 {
     auto A = DistributedMatrix<double>::Initialized(context, {n, n}, {nb, nb}, [](int2 gid){ return gid.col; });
 
-
     std::cout << A;
 
-    auto b = A.OneNorm();
+    auto b = A.EuclideanNorm();
 
     if (pid == 0)
     {

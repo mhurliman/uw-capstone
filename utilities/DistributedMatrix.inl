@@ -85,7 +85,7 @@ void GatherMatrix(int2 id, int2 pgDims, T* global, const MatDesc& desc, const T*
                 ops::CvGESD2D(ctxt, nr, nc, &local[CMIDX(recvr, recvc, localDims.row)], localDims.row, 0, 0);
                 recvc = (recvc + nc) % localDims.col;
             }
-            
+
             if (id.IsRoot()) 
             {
                 ops::CvGERV2D(ctxt, nr, nc, &global[CMIDX(r, c, M)], M, sendr, sendc);
@@ -97,143 +97,228 @@ void GatherMatrix(int2 id, int2 pgDims, T* global, const MatDesc& desc, const T*
     }
 }
 
+template <typename T>
+ValueType<T> DistributedMatrix<T>::OneNorm(void) const
+{
+    // Compute local sum of each column
+    auto sum = std::vector<ValueType<T>>(m_localDims.col, 0);
+
+    for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+    {
+        for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+        {
+            sum[iCol] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
+        }
+    }
+
+    // Sum reduction along rows
+    auto dest = std::vector<ValueType<T>>(m_localDims.col);
+
+    for (int order = 1; order < m_PGridDims.row; order <<= 1)
+    {
+        // Swizzle the LSB to get the exchange process id
+        int xRowId = m_PGridId.row ^ order;
+
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xRowId >= m_PGridDims.row)
+            continue;
+
+        // Threads with '1' LSB send to lower id threads
+        if ((m_PGridId.row & order) != 0)
+        {
+            ops::CvGESD2D(m_desc.ctxt, 1, m_localDims.col, sum.data(), 1, xRowId, m_PGridId.col);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, m_localDims.col, dest.data(), 1, xRowId, m_PGridId.col);
+
+            // Accumulate exchanged values
+            for (int i = 0; i < m_localDims.col; ++i)
+            {
+                sum[i] += dest[i];
+            }
+        }
+    }
+
+    ValueType<T> max = *std::max_element(sum.begin(), sum.end());
+    ValueType<T> recv;
+
+    // Max reduction along columns of row 0
+    if (m_PGridId.row == 0)
+    {
+        for (int order = 1; order < m_PGridDims.col; order <<= 1)
+        {
+            int xColId = m_PGridId.col ^ order;
+            if (xColId >= m_PGridDims.col)
+                continue;
+
+            if ((m_PGridId.col & order) != 0)
+            {
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &max, 1, 0, xColId);
+                break;
+            }
+            else
+            {
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &recv, 1, 0, xColId);
+                max = std::max(max, recv);
+            }
+
+        }
+    }
+
+    // Optional step, but broadcast the final result back sto all processes
+    MPI_Bcast(&max, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
+
+    return max;
+}
 
 template <typename T>
 ValueType<T> DistributedMatrix<T>::InfinityNorm(void) const
 {
-    const int zero = 0;
+    // Compute local sum of each row
+    auto sum = std::vector<ValueType<T>>(m_localDims.row, 0);
 
-    auto global = std::vector<ValueType<T>>(IsRootProcess() ? m_desc.M : 1, 0);
-
-    const int max = numroc_(&m_desc.M, &m_desc.Mb, &zero, &zero, &m_PGridDims.row);
-    auto stage = std::vector<ValueType<T>>(max, 0);
-
-    // Compute local absolute sum
-    for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+    for (int iCol = 0; iCol < m_localDims.col; ++iCol)
     {
-        for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+        for (int iRow = 0; iRow < m_localDims.row; ++iRow)
         {
-            stage[iRow] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
+            sum[iRow] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
         }
     }
 
-    for (int iRow = 0, curr = 0; iRow < m_PGridDims.row; ++iRow)
+    // Sum reduction along rows
+    auto dest = std::vector<ValueType<T>>(m_localDims.row);
+
+    for (int order = 1; order < m_PGridDims.col; order <<= 1)
     {
-        const int rows = numroc_(&m_desc.M, &m_desc.Mb, &iRow, &zero, &m_PGridDims.row);
+        // Swizzle the LSB of the column id to get the exchange process id
+        int xColId = m_PGridId.col ^ order;
 
-        for (int iCol = 0; iCol < m_PGridDims.col; ++iCol)
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xColId >= m_PGridDims.col)
+            continue;
+
+        // Processes with '1' LSB send to lower id threads
+        if ((m_PGridId.col & order) != 0)
         {
-            if (m_PGridId.col == iCol && m_PGridId.row == iRow)
-            {
-                ops::CvGESD2D(m_desc.ctxt, 1, rows, stage.data(), 1, 0, 0);
-            }
+            ops::CvGESD2D(m_desc.ctxt, 1, m_localDims.row, sum.data(), 1, m_PGridId.row, xColId);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, m_localDims.row, dest.data(), 1, m_PGridId.row, xColId);
 
-            if (IsRootProcess())
+            // Accumulate exchanged values
+            for (int i = 0; i < m_localDims.row; ++i)
             {
-                ops::CvGERV2D(m_desc.ctxt, 1, rows, stage.data(), 1, iRow, iCol);
-
-                std::cout << iRow << " " << iCol << ": ";
-                for (int i = 0; i < rows; ++i)
-                {
-                    global[curr + i] += stage[i];
-                    std::cout << stage[i] << ", ";
-                }
-                std::cout << std::endl;
+                sum[i] += dest[i];
             }
         }
-
-        curr += rows;
     }
 
-    return *std::max_element(global.begin(), global.end());
+    ValueType<T> max = *std::max_element(sum.begin(), sum.end());
+    ValueType<T> recv;
+
+    // Max reduction along columns of row 0
+    if (m_PGridId.col == 0)
+    {
+        for (int order = 1; order < m_PGridDims.row; order <<= 1)
+        {
+            int xRowId = m_PGridId.row ^ order;
+            
+            if (xRowId >= m_PGridDims.row)
+                continue;
+
+            // Processes with '1' LSB send to lower id threads
+            if ((m_PGridId.row & order) != 0)
+            {
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &max, 1, xRowId, 0);
+                break;
+            }
+            else
+            {
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &recv, 1, xRowId, 0);
+                max = std::max(max, recv);
+            }
+
+        }
+    }
+
+    // Optional step, but broadcast the final result back sto all processes
+    MPI_Bcast(&max, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
+
+    return max;
 }
 
 template <typename T>
 ValueType<T> DistributedMatrix<T>::EuclideanNorm(void) const
 {
-    ValueType<T> localSum = 0;
-    ValueType<T> globalSum = 0;
-
     // Compute local absolute sum
-    for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+    ValueType<T> sum = std::accumulate(
+        m_localData.get(), 
+        m_localData.get() + m_localDims.Count(),
+        0,
+        [](auto x, auto y) { return x + std::real(std::conj(y) * y); } // Must account for complex dot product
+    );
+
+    // Sum reduction along rows
+    ValueType<T> dest;
+
+    for (int order = 1; order < m_PGridDims.row; order <<= 1)
     {
-        for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+        // Swizzle the LSB to get the exchange process id
+        int xRowId = m_PGridId.row ^ order;
+
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xRowId >= m_PGridDims.row)
+            continue;
+
+        // Threads with '1' LSB send to lower id threads
+        if ((m_PGridId.row & order) != 0)
         {
-            T v = m_localData[CMIDX(iRow, iCol, m_localDims.row)];
-            localSum += std::real(std::conj(v) * v);
+            ops::CvGESD2D(m_desc.ctxt, 1, 1, &sum, 1, xRowId, m_PGridId.col);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, 1, &dest, 1, xRowId, m_PGridId.col);
+
+            sum += dest;
         }
     }
 
-    for (int iRow = 0; iRow < m_PGridDims.row; ++iRow)
+    // Sum reduction along columns of row 0
+    if (m_PGridId.row == 0)
     {
-        for (int iCol = 0; iCol < m_PGridDims.col; ++iCol)
+        for (int order = 1; order < m_PGridDims.col; order <<= 1)
         {
-            if (m_PGridId.col == iCol && m_PGridId.row == iRow)
+            int xColId = m_PGridId.col ^ order;
+            
+            // Sit out this exchange if the sending thread is out of range of the grid dimensions
+            if (xColId >= m_PGridDims.col)
+                continue;
+
+            if ((m_PGridId.col & order) != 0)
             {
-                ops::CvGESD2D(m_desc.ctxt, 1, 1, &localSum, 1, 0, 0);
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &sum, 1, 0, xColId);
+                break;
             }
-
-            if (IsRootProcess())
+            else
             {
-                ValueType<T> dst;
-                ops::CvGERV2D(m_desc.ctxt, 1, 1, &dst, 1, iRow, iCol);
-
-                globalSum += dst;
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &dest, 1, 0, xColId);
+                sum += dest;
             }
         }
     }
 
-    return sqrt(globalSum);
-}
+    // Norm that baby
+    sum = sqrt(sum);
 
-template <typename T>
-ValueType<T> DistributedMatrix<T>::OneNorm(void) const
-{
-    const int zero = 0;
+    // Optional step, but broadcast the final result back sto all processes
+    MPI_Bcast(&sum, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
 
-    auto global = std::vector<ValueType<T>>(IsRootProcess() ? m_desc.N : 1, 0);
-
-    const int max = numroc_(&m_desc.N, &m_desc.Nb, &zero, &zero, &m_PGridDims.col);
-    auto stage = std::vector<ValueType<T>>(max, 0);
-
-    // Compute local absolute sum
-    for (int iCol = 0; iCol < m_localDims.col; ++iCol)
-    {
-        for (int iRow = 0; iRow < m_localDims.row; ++iRow)
-        {
-            stage[iCol] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
-        }
-    }
-
-    for (int iCol = 0, curr = 0; iCol < m_PGridDims.col; ++iCol)
-    {
-        const int cols = numroc_(&m_desc.N, &m_desc.Nb, &iCol, &zero, &m_PGridDims.col);
-
-        for (int iRow = 0; iRow < m_PGridDims.row; ++iRow)
-        {
-            if (m_PGridId.col == iCol && m_PGridId.row == iRow)
-            {
-                ops::CvGESD2D(m_desc.ctxt, 1, cols, stage.data(), 1, 0, 0);
-            }
-
-            if (IsRootProcess())
-            {
-                ops::CvGERV2D(m_desc.ctxt, 1, cols, stage.data(), 1, iRow, iCol);
-
-                std::cout << iRow << " " << iCol << ": ";
-                for (int i = 0; i < cols; ++i)
-                {
-                    global[curr + i] += stage[i];
-                    std::cout << stage[i] << ", ";
-                }
-                std::cout << std::endl;
-            }
-        }
-
-        curr += cols;
-    }
-
-    return *std::max_element(global.begin(), global.end());
+    return sum;
 }
 
 template <typename T>
