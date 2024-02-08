@@ -87,6 +87,10 @@ public:
     using CustomOpFunc = std::function<void(int2, T&)>;
     void CustomOp(CustomOpFunc f);
 
+    ValueType<T> OneNorm(void) const;
+    ValueType<T> InfinityNorm(void) const;
+    ValueType<T> FrobeniusNorm(void) const;
+
     template <typename U>
     static LocalMatrix<T> Uninitialized(const LocalMatrix<U>& dimsSpec);
     static LocalMatrix<T> Uninitialized(int2 dims);
@@ -95,6 +99,8 @@ public:
     static LocalMatrix<T> Initialized(const LocalMatrix<U>& data);
     static LocalMatrix<T> Initialized(int2 dims, InitializerFunc f);
     static LocalMatrix<T> Initialized(int2 dims, const std::initializer_list<T>& rowMajorList);
+
+    static LocalMatrix<T> RandomHermitian(int n, int seed);
 
     inline ValueType<T> ASum(void) const;
 
@@ -159,7 +165,7 @@ public:
 
     ValueType<T> OneNorm(void) const;
     ValueType<T> InfinityNorm(void) const;
-    ValueType<T> EuclideanNorm(void) const;
+    ValueType<T> FrobeniusNorm(void) const;
 
     using InitializerFunc = std::function<T(int2)>;
     void SetElements(InitializerFunc f);

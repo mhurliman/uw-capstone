@@ -14,6 +14,17 @@ public:
     Random(long unsigned int seed) : mt{ seed } { }
 
     T Generate() { return std::uniform_real_distribution<T>{0, 1}(mt); }
+
+    T GenerateReal()
+    {
+        return std::uniform_real_distribution<T>{0, 1}(mt); // Discard one
+    }
+
+    T GenerateImaginary()
+    {
+        return 0;
+    }
+    
     T operator()() { return Generate(); }
 
 private:

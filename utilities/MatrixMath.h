@@ -289,13 +289,19 @@ T InfinityNorm(T* A, int n)
 {
     assert(A != 0 && n > 0);
 
-    T sum = 0;
+    T max = 0;
     for (int i = 0; i < n; ++i)
     {
+        T sum = 0;
+
         for (int j = 0; j < n; ++j)
             sum += abs(A[i + n * j]);
+
+        if (sum > max)
+            max = sum;
     }
-    return sqrt(sum);
+
+    return max;
 }
 
 template <typename T>

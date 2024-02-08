@@ -245,14 +245,14 @@ ValueType<T> DistributedMatrix<T>::InfinityNorm(void) const
         }
     }
 
-    // Optional step, but broadcast the final result back sto all processes
+    // Optional step, but broadcast the final result back to all processes
     MPI_Bcast(&max, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
 
     return max;
 }
 
 template <typename T>
-ValueType<T> DistributedMatrix<T>::EuclideanNorm(void) const
+ValueType<T> DistributedMatrix<T>::FrobeniusNorm(void) const
 {
     // Compute local absolute sum
     ValueType<T> sum = std::accumulate(
@@ -365,6 +365,54 @@ void LocalMatrix<T>::CustomOp(CustomOpFunc f)
 }
 
 template <typename T>
+ValueType<T> LocalMatrix<T>::OneNorm(void) const
+{
+    ValueType<T> max = 0;
+    for (int i = 0; i < m_dims.row; ++i)
+    {
+        ValueType<T> sum = 0;
+
+        for (int j = 0; j < m_dims.col; ++j)
+            sum += std::abs(m_data[i + m_dims.row * j]);
+
+        if (sum > max)
+            max = sum;
+    }
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> LocalMatrix<T>::InfinityNorm(void) const
+{
+    ValueType<T> max = 0;
+    for (int j = 0; j < m_dims.col; ++j)
+    {
+        ValueType<T> sum = 0;
+
+        for (int i = 0; i < m_dims.row; ++i)
+            sum += std::abs(m_data[i + m_dims.row * j]);
+
+        if (sum > max)
+            max = sum;
+    }
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> LocalMatrix<T>::FrobeniusNorm(void) const
+{
+    ValueType<T> sum = 0;
+    for (int j = 0; j < m_dims.col; ++j)
+    {
+        for (int i = 0; i < m_dims.row; ++i)
+            sum += std::norm(m_data[i + m_dims.row * j]);
+    }
+    return sqrt(sum);
+}
+
+template <typename T>
 LocalMatrix<T> LocalMatrix<T>::Uninitialized(int2 dims)
 {
     LocalMatrix<T> A;
@@ -413,6 +461,33 @@ LocalMatrix<T> LocalMatrix<T>::Initialized(const LocalMatrix<U>& data)
 {
     auto A = Uninitialized(data);
     std::memcpy(A.m_data.get(), data.m_data.get(), A.Bytes());
+    return A;
+}
+
+
+template <typename T>
+LocalMatrix<T> LocalMatrix<T>::RandomHermitian(int n, int seed)
+{
+    Random<T> r(seed);
+    auto A = Uninitialized({n, n});
+    
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j <= i; ++j)
+        {
+            if (i == j)
+            {
+                A.m_data[j + i * n] = r.GenerateReal();
+            }
+            else
+            {
+                T v = r();
+                A.m_data[j + i * n] = v;
+                A.m_data[i + j * n] = std::conj(v);
+            }
+        }
+    }
+
     return A;
 }
 

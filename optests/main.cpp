@@ -1,10 +1,11 @@
 
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <math.h>
-#include <iomanip>
-#include <fstream>
 
 #include <DistributedMatrix.h>
+#include <MatrixMath.h>
 
 double TestHZeZError(int context, int n, int nb, int seed)
 {
@@ -164,17 +165,23 @@ void TestQRFactorization(int context, int pc, int pid, int n, int nb)
     }
 }
 
-void TestOneNorm(int context, int pc, int pid, int n, int nb)
+void TestNormOp(int context, int pc, int pid, int n, int nb)
 {
-    auto A = DistributedMatrix<double>::Initialized(context, {n, n}, {nb, nb}, [](int2 gid){ return gid.col; });
+    auto Al = pid == 0 ? LocalMatrix<c64>::RandomHermitian(n, 2) : LocalMatrix<c64>::Uninitialized({n, n});
+    auto A = DistributedMatrix<c64>::Initialized(context, {nb, nb}, Al);
 
-    std::cout << A;
+    Cblacs_barrier(context, "All");
 
-    auto b = A.EuclideanNorm();
-
+    auto b = A.InfinityNorm();
     if (pid == 0)
     {
         std::cout << std::setprecision(6) << b << std::endl;
+    }
+
+    double b2 = Al.InfinityNorm();
+    if (pid == 0)
+    {
+        std::cout << std::setprecision(6) << b2 << std::endl;
     }
 }
 
@@ -191,10 +198,8 @@ int main(int argc, char* argv[])
     // Grab MPI IDs
     MPI_Init(&argc, &argv);
 
-    int pc;
+    int pc, pid;
     MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &pc));
-
-    int pid;
     MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &pid));
 
     int nameLen;
@@ -213,7 +218,7 @@ int main(int argc, char* argv[])
 
     //TestError(context, pc, pid, n, nb, 0);
     //TestQRFactorization(context, pc, pid, n, nb);
-    TestOneNorm(context, pc, pid, n, nb);
+    TestNormOp(context, pc, pid, n, nb);
 
     Cblacs_gridexit(context);
     MPI_Finalize();
