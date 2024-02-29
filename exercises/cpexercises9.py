@@ -2,11 +2,11 @@
 from functools import partial as bind
 import itertools
 import matplotlib.pyplot as plt
+import matplotlib.animation as anim
 import numpy as np
 import sys
 import types
 from time import time
-import vpython as vp
 import dcst
 
 def ex_9_1a():
@@ -214,9 +214,8 @@ def ex_9_5():
     h = 1e-3      # Timestep (ms)
     v = 100       # ms^-1
 
-    N = 50      # Number of spatial grid points
+    N = 100      # Number of spatial grid points
     a = L / N    # Grid spacing in meters
-
 
     psi_0 = lambda x : C * (x * (L - x)) / L**2 * np.exp(-(x - d)**2 / (2 * sigma**2))
 
@@ -225,36 +224,31 @@ def ex_9_5():
     phi = np.zeros(N + 1, float)
     psi = psi_0(x)
 
-    phi[0] = phi[-1] = 0
-    psi[0] = psi[-1] = 0
-
     phip = np.copy(phi)
     psip = np.copy(psi)
 
-    g = vp.graph(ymin=-1e-1, ymax=1e-1, title='t = 0 ms')
-    c = vp.gcurve()
+    fig, ax = plt.subplots()
+    ax.set(ylim=[-1e-1, 1e-1], xlabel='x (m)', ylabel='psi(x, t)')
 
-    for t in np.arange(0, 100, h):
-        vp.rate(30)
+    wave = ax.plot(x, np.zeros_like(x))[0]
+
+    def update(frame):
+        t = frame * h
         phip = phi + h * psi
         psip[1:-1] = h * v**2 / a**2 * np.convolve(phi, [1, -2, 1], 'valid') + psi[1:-1]
 
-        phi, phip = phip, phi
-        psi, psip = psip, psi
+        np.copyto(phi, phip)
+        np.copyto(psi, psip)
 
-        bl = np.dstack((x, phi))
-        bl = bl.squeeze()
+        wave.set_ydata(phi)
+        ax.set(title='t = {:.3f} ms'.format(t))
 
-        c.data=bl.tolist()
-        g.title = 't = {:.3f} ms'.format(t)
+    an = anim.FuncAnimation(fig=fig, func=update, interval=1)
+    plt.show()
 
+# Creates a tridiagonal matrix with a, b, c as the repeated elements along the diagonal
 def triagonal(a, b, c, n):
-    a = np.complex128(a)
-    b = np.complex128(b)
-    c = np.complex128(c)
     return np.diag([a]*(n-1), -1) + np.diag([b]*n, 0) + np.diag([c]*(n-1), 1)
-
-from decimal import Decimal
 
 def ex_9_8():
     N = 1000
@@ -270,12 +264,14 @@ def ex_9_8():
     hb = 1.054571817e-34 # J s 
     m = 9.109e-31 # kg
 
+    # Build the matrices for our forward differences approximations
     a_1 = 1 + h * 1j * hb / (2 * m * a**2)
     a_2 = -h * 1j * hb / (4 * m * a**2)
 
     b_1 = 1 - h * 1j * hb / (2 * m * a**2)
     b_2 = h * 1j * hb / (4 * m * a**2)
 
+    # A psi(x, t + h) = B psi(x, t) --> psi(x, t + h) = A^-1 B psi(x, t)
     A = triagonal(a_2, a_1, a_2, N+1)
     B = triagonal(b_2, b_1, b_2, N+1)
     Z = np.matmul(np.linalg.inv(A), B)
@@ -285,31 +281,27 @@ def ex_9_8():
     x = np.linspace(0, L, N+1, True)
     psi = psi_0(x)
 
-    g = vp.graph(ymin = -1, ymax = 1, title='t = 0 fs')
-    c = vp.gcurve()
+    fig, ax = plt.subplots()
+    ax.set(ylim=[-1, 1], xlabel='x (m)', ylabel='psi(x, t)')
 
-    t = 0
-    while True:
-        t += h
-        vp.rate(90)
+    wave = ax.plot(x, np.zeros_like(x))[0]
 
-        psip = np.matmul(Z, psi)
+    def update(frame):
+        t = frame * h
+        np.copyto(psi, np.matmul(Z, psi))
 
-        psip, psi = psi, psip
+        wave.set_ydata(np.abs(psi))
+        ax.set(title='t = {:.3f} fs'.format(t * 1e15))
 
-        bl = np.dstack((x, np.abs(psi)))
-        bl = bl.squeeze()
+    a = anim.FuncAnimation(fig=fig, func=update, interval=1)
+    plt.show()
 
-        c.data = bl.tolist()
-        g.title = 't = {:.3f} fs'.format(t * 10**15)
 
 def ex_9_9():
     N = 1000
     L = 1e-8 # m
-    a = L / N
 
     h = 1e-18 # s
-    T = h * 1000
 
     x_0 = L / 2
     sigma = 1e-10 # m
@@ -318,27 +310,31 @@ def ex_9_9():
     hb = 1.054571817e-34 # J s 
     m = 9.109e-31 # kg
 
-    E = lambda k: (np.pi * hb * k)**2 / (2 * m * L**2)
-    psi_k = lambda x, t, k: np.sin(np.pi * k * x / L) * np.exp(1j * E(k) * t / hb)
-
+    E = lambda k: np.pi**2 * hb * k**2 / (2 * m * L**2)
     psi_0 = lambda x: np.exp(-(x - x_0)**2 / (2 * sigma**2)) * np.exp(1j * K * x)
 
     x = np.linspace(0, L, N, True)
-    n = np.arange(0, len(x))
+    n = np.arange(len(x))
     psi = psi_0(x)
 
-    psi_real = np.real(psi)
-    psi_imag = np.imag(psi)
+    alpha = dcst.dst(np.real(psi))
+    nu = dcst.dst(np.imag(psi))
 
-    bk = dcst.dst(psi_real) + 1j * dcst.dst(psi_imag)
+    psi_t = lambda t: alpha * np.cos(E(n) * t) + nu * np.sin(E(n) * t)
 
-    # bk * np.exp(1j * np.pi**2 * hb * )
+    fig, ax = plt.subplots()
+    wave = ax.plot(x, np.zeros_like(x))[0]
+    ax.set(ylim=[-1, 1], xlabel='x (m)', ylabel='psi(x, t)')
 
-    # dcst.idst()
-    # psi_t(x, n, alpha, beta, k, 1e-16)
+    def update(frame):
+        t = frame * h
+        p = dcst.idst(psi_t(t))
 
-    # plt.plot(x, )
-    # plt.show()
+        wave.set_ydata(np.abs(p))
+        ax.set(title='t = {:.3f} fs'.format(t * 1e15))
+
+    a = anim.FuncAnimation(fig=fig, func=update, interval=1)
+    plt.show()
 
 
 default = ex_9_9
