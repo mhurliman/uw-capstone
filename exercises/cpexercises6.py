@@ -30,7 +30,6 @@ def ex_6_5():
     b = np.array([3, 1.5, 3])
 
     V = np.linalg.solve(A, b)
-    np.linalg.ei
 
     for i in range(len(V)):
         r, theta = cmath.polar(V[i])
