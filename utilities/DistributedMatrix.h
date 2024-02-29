@@ -31,11 +31,22 @@ struct int2
     static int2 One(void) { return int2 { 1, 1 }; }
     static int2 OneBased(int2 dims) { return dims.ToOneBased(); }
 
+    inline int operator[](int index) const { return (index & 0x1) == 0 ? row : col; };
     inline int2 operator-(void) const { return { .row = -row, .col = -col }; }
     inline bool operator==(int2 rhs) const { return std::memcmp(this, &rhs, sizeof(int2)) == 0; }
     inline int2 operator+(int2 rhs) const { return { .row = row + rhs.row, .col = col + rhs.col }; }
     inline int2 operator-(int2 rhs) const { return operator+(-rhs); }
 };
+
+// Generate as close to a square grid as possible
+// Prime values aren't great candidates here...
+inline int2 CalcProcessorGridDims(int p)
+{
+    int d1 = static_cast<int>(sqrtf(p));
+    for (; p % d1; --d1);
+
+    return int2{ .row = d1, .col = p / d1 };
+}
 
 struct MatDesc
 {
@@ -62,10 +73,11 @@ public:
     const T* Data(void) const { return m_data.get(); }
 
     int2 Dims(void) const { return m_dims; }
-    int Bytes(void) const { return m_dims.Count() * sizeof(T); }
+    int Bytes(void) const { return NumElements() * sizeof(T); }
 
     inline const int& NumRows(void) const { return m_dims.row; }
     inline const int& NumCols(void) const { return m_dims.col; }
+    inline int NumElements(void) const { return m_dims.Count(); }
 
     void Print(std::ostream& os) const;
 
@@ -74,6 +86,10 @@ public:
 
     using CustomOpFunc = std::function<void(int2, T&)>;
     void CustomOp(CustomOpFunc f);
+
+    ValueType<T> OneNorm(void) const;
+    ValueType<T> InfinityNorm(void) const;
+    ValueType<T> FrobeniusNorm(void) const;
 
     template <typename U>
     static LocalMatrix<T> Uninitialized(const LocalMatrix<U>& dimsSpec);
@@ -84,10 +100,15 @@ public:
     static LocalMatrix<T> Initialized(int2 dims, InitializerFunc f);
     static LocalMatrix<T> Initialized(int2 dims, const std::initializer_list<T>& rowMajorList);
 
+    static LocalMatrix<T> RandomHermitian(int n, int seed);
+
+    inline ValueType<T> ASum(void) const;
+
     inline T& operator[](int index) { return m_data[index]; }
     inline T operator[](int index) const { return m_data[index]; }
 
-    static LocalMatrix<T> Transpose(const LocalMatrix<T>& A) { 
+    static LocalMatrix<T> Transpose(const LocalMatrix<T>& A) 
+    { 
         auto B = LocalMatrix<T>::Initialized(A);
         std::swap(B.m_dims.row, B.m_dims.col); 
         return B;
@@ -142,6 +163,10 @@ public:
     DistributedMatrix<T> SubmatrixRow(int rowIndex) const;
     DistributedMatrix<T> SubmatrixColumn(int colIndex) const;
 
+    ValueType<T> OneNorm(void) const;
+    ValueType<T> InfinityNorm(void) const;
+    ValueType<T> FrobeniusNorm(void) const;
+
     using InitializerFunc = std::function<T(int2)>;
     void SetElements(InitializerFunc f);
 
@@ -166,16 +191,13 @@ public:
     static DistributedMatrix<T> Zeros(int context, int numRows, int blockSize);
     static DistributedMatrix<T> Zeros(int context, int2 dims, int2 blockSize);
 
+    template <typename U>
+    static DistributedMatrix<T> Initialized(int context, int2 blockSize, const LocalMatrix<U>& data);
     static DistributedMatrix<T> Initialized(int context, int2 dims, int2 blockSize, InitializerFunc f);
     static DistributedMatrix<T> Initialized(int context, int2 dims, int2 blockSize, const std::initializer_list<T>& rowMajorList);
 
-    template <typename U>
-    static DistributedMatrix<T> Initialized(int context, int2 blockSize, const LocalMatrix<U>& data);
-
     static DistributedMatrix<T> Identity(int context, int2 dims, int2 blockSize);
-
     static DistributedMatrix<T> UniformRandom(int context, int2 dims, int2 blockSize, int seed, double range = 1.0f);
-
     static DistributedMatrix<T> RandomHermitian(int context, int dim, int2 blockSize, int seed);
 
     template <typename U>
@@ -295,6 +317,7 @@ void PvAMAX(T& max, int& index, const DistributedMatrix<T>& X);
 template <typename T>
 void PvCOPY(const DistributedMatrix<T>& X, DistributedMatrix<T>& Y);
 
+// sub( Y ) := sub( Y ) + alpha * sub( X )
 template <typename T>
 void PvAXPY(ValueType<T> a, const DistributedMatrix<T>& X, DistributedMatrix<T>& Y);
 

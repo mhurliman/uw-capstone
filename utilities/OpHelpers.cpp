@@ -7,25 +7,25 @@ namespace ops
     // GERV2D
     
     template <>
-    void GERV2D<float>(int context, int M, int N, float* A, int lda, int rsrc, int csrc)
+    void CvGERV2D<float>(int context, int M, int N, float* A, int lda, int rsrc, int csrc)
     {
         Csgerv2d(context, M, N, A, lda, rsrc, csrc);
     }
 
     template <>
-    void GERV2D<double>(int context, int M, int N, double* A, int lda, int rsrc, int csrc)
+    void CvGERV2D<double>(int context, int M, int N, double* A, int lda, int rsrc, int csrc)
     {
         Cdgerv2d(context, M, N, A, lda, rsrc, csrc);
     }
 
     template <>
-    void GERV2D<c32>(int context, int M, int N, c32* A, int lda, int rsrc, int csrc)
+    void CvGERV2D<c32>(int context, int M, int N, c32* A, int lda, int rsrc, int csrc)
     {
         Ccgerv2d(context, M, N, A, lda, rsrc, csrc);
     }
 
     template <>
-    void GERV2D<c64>(int context, int M, int N, c64* A, int lda, int rsrc, int csrc)
+    void CvGERV2D<c64>(int context, int M, int N, c64* A, int lda, int rsrc, int csrc)
     {
         Czgerv2d(context, M, N, A, lda, rsrc, csrc);
     }
@@ -35,25 +35,25 @@ namespace ops
     // GESD2D
 
     template <>
-    void GESD2D<float>(int context, int M, int N, const float* A, int lda, int rdest, int cdest)
+    void CvGESD2D<float>(int context, int M, int N, const float* A, int lda, int rdest, int cdest)
     {
         Csgesd2d(context, M, N, A, lda, rdest, cdest);
     }
 
     template <>
-    void GESD2D<double>(int context, int M, int N, const double* A, int lda, int rdest, int cdest)
+    void CvGESD2D<double>(int context, int M, int N, const double* A, int lda, int rdest, int cdest)
     {
         Cdgesd2d(context, M, N, A, lda, rdest, cdest);
     }
 
     template <>
-    void GESD2D<c32>(int context, int M, int N, const c32* A, int lda, int rdest, int cdest)
+    void CvGESD2D<c32>(int context, int M, int N, const c32* A, int lda, int rdest, int cdest)
     {
         Ccgesd2d(context, M, N, A, lda, rdest, cdest);
     }
 
     template <>
-    void GESD2D<c64>(int context, int M, int N, const c64* A, int lda, int rdest, int cdest)
+    void CvGESD2D<c64>(int context, int M, int N, const c64* A, int lda, int rdest, int cdest)
     {
         Czgesd2d(context, M, N, A, lda, rdest, cdest);
     }

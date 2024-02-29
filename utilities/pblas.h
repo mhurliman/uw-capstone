@@ -32,13 +32,22 @@ std::ostream& operator<<(std::ostream& os, c64 x);
 // Templatized ops for convenience
 
 template <typename T, typename Enable = void>
-struct TypeTraits { using type = typename T::value_type; };
+struct TypeTraits 
+{ 
+    using type = typename T::value_type; 
+};
 
 template <typename T>
-struct TypeTraits<T, typename std::enable_if_t<std::is_floating_point_v<T>>> { using type = T; };
+struct TypeTraits<T, typename std::enable_if_t<std::is_floating_point_v<T>>> 
+{ 
+    using type = T;
+};
 
 template <typename T>
 using ValueType = typename TypeTraits<T>::type;
+
+template <typename T>
+inline constexpr MPI_Datatype MPI_Type = std::is_same_v<ValueType<T>, double> ? MPI_DOUBLE : MPI_FLOAT;
 
 template <typename T>
 auto FormatZeros(T v, ValueType<T> err = 1e-4) -> std::enable_if_t<std::is_floating_point_v<T>, T>

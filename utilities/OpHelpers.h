@@ -5,10 +5,10 @@
 namespace ops
 {
     template <typename T>
-    void GERV2D(int context, int M, int N, T* A, int lda, int rsrc, int csrc);
+    void CvGERV2D(int context, int M, int N, T* A, int lda, int rsrc, int csrc);
 
     template <typename T>
-    void GESD2D(int context, int M, int N, const T* A, int lda, int rdest, int cdest);
+    void CvGESD2D(int context, int M, int N, const T* A, int lda, int rdest, int cdest);
 
     template <typename T>
     void PvTRAN(

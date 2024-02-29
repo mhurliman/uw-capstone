@@ -1,120 +1,188 @@
 
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <math.h>
-#include <iomanip>
 
 #include <DistributedMatrix.h>
+#include <MatrixMath.h>
 
-// Start with a square grid (sqrt(p)) and 
-int2 CalcProcessorGridDims(int p)
-{
-    int d1 = static_cast<int>(sqrtf(p));
-    for (; p % d1; --d1);
-
-    return int2{ .row = d1, .col = p / d1 };
-}
-
-void TestPvHEEV(int context, int n, int nb, int seed)
+double TestHZeZError(int context, int n, int nb, int seed)
 {
     auto H = DistributedMatrix<c64>::RandomHermitian(context, n, { nb, nb }, seed);
     auto Z = DistributedMatrix<c64>::Uninitialized(H);
     auto Wl = LocalMatrix<double>::Uninitialized({n, 1});
 
     auto M = DistributedMatrix<c64>::Duplicate(H);
+
     PvHEEV(M, Wl, Z); // Solve for eigenvalues of H
-
-    PvGEMM(1.0, H, Z, 0.0, M); // Compute HZ
-
-    // Compute eZ
-    auto Zp = DistributedMatrix<c64>::Duplicate(Z);
-    for (int i = 0; i < n; ++i)
-    {
-        auto Zi = Zp.SubmatrixColumn(i);
-        PvSCAL(Wl[i], Zi);
-    }
+    PvGEMM(1.0, H, Z, 0.0, M);
 
     // Find error in HZ - eZ = 0
     auto T = LocalMatrix<double>::Uninitialized({n, 1});
     for (int i = 0; i < n; ++i)
     {
-        auto Zi = Zp.SubmatrixColumn(i);
-        auto Mi = M.SubmatrixColumn(i);
-        PvAXPY(-1.0, Zi, Mi);
+        auto Zi = Z.SubmatrixColumn(i);
+        auto Mi = M.SubmatrixColumn(i); 
+        PvAXPY(-Wl[i], Zi, Mi);
 
-        T[i] = PvNRM2(Mi);
+        T[i] = PvASUM(Mi) / n;
     }
 
     // Print error for each vector of Z
+    double avgErr = T.ASum() / n;
     if (H.IsRootProcess())
     {
-        std::cout << T << std::endl;
+        std::cout << "Average error for HZ-eZ: ";
+        std::cout << avgErr << std::endl;
     }
 
-    PvGEMM(TRANS_OPT_NONE, TRANS_OPT_CONJ_TRANS, 1.0, Z, Z, 0.0, M);
-
-    std::cout << M;
+    return avgErr;
 }
 
-void TestQQtError(int context, int n, int nb, int seed)
+double TestZZhhError(int context, int n, int nb, int seed)
 {
     auto H = DistributedMatrix<c64>::RandomHermitian(context, n, { nb, nb }, seed);
-    auto C = DistributedMatrix<c64>::Uninitialized(context, { n, n }, { nb, nb });
+    auto Z = DistributedMatrix<c64>::Uninitialized(H);
+    auto C = DistributedMatrix<c64>::Identity(context, { n, n }, { nb, nb });
 
-    PvGEMM(TRANS_OPT_NONE, TRANS_OPT_CONJ_TRANS, 1.0, H, H, 0.0, C);
+    auto Wl = LocalMatrix<double>::Uninitialized({n, 1});
 
-    //Find error in HZ - eZ = 0
+    PvHEEV(H, Wl, Z);
+    PvGEMM(TRANS_OPT_NONE, TRANS_OPT_CONJ_TRANS, 1.0, Z, Z, -1.0, C);
+
     auto T = LocalMatrix<double>::Uninitialized({n, 1});
     for (int i = 0; i < n; ++i)
     {
         auto Ci = C.SubmatrixColumn(i);
-        T[i] = PvNRM2(Ci);
+        T[i] = PvASUM(Ci) / n;
     }
 
     // Print error for each vector of Z
+    double avgErr = T.ASum() / n;
     if (H.IsRootProcess())
     {
-        std::cout << T << std::endl;
+        std::cout << "Average error for ZZ^H: ";
+        std::cout << avgErr << std::endl;
+    }
+
+    return avgErr;
+}
+
+void TestError(int context, int pc, int pid, int n, int nb, int seed)
+{
+    const int testPowers = 10;
+    const int testCount = testPowers * (testPowers + 1) / 2;
+
+    char* labels[testCount]{};
+    double err0[testCount]{};
+    double err1[testCount]{};
+
+    int test = 0;
+    for (int m = 3; m < testPowers; ++m)
+    {
+        const int N = 1 << m;
+
+        for (int b = 1; b < m; ++b, ++test)
+        {
+            const int Nb = 1 << b;
+
+            if (pid == 0)
+            {
+                char buff[256];
+                int cnt = std::snprintf(buff, sizeof(buff), "%d,%d", N, Nb);
+
+                labels[test] = new char[cnt];
+                std::strcpy(labels[test], buff);
+
+                std::cout << "Dimension: " << N << " Block size: " << Nb << std::endl;
+            }
+
+            err0[test] = TestHZeZError(context, N, Nb, 0);
+            err1[test] = TestZZhhError(context, N, Nb, 0);
+        }
+    }
+
+    if (pid == 0)
+    {
+        std::ofstream of = std::ofstream("datafile.csv");
+        if (of.is_open())
+        {
+            for (int i = 0; i < test; ++i)
+            {
+                of << labels[i];
+                of << ",";
+                of << err0[i];
+                of << ",";
+                of << err1[i];
+                of << "\n";
+            }
+        }
     }
 }
 
-void TestPvGESRQ(int context, int pc, int pid, int n, int nb)
+void TestQRFactorization(int context, int pc, int pid, int n, int nb)
 {
     // Define block sizes
-    auto A = DistributedMatrix<double>::UniformRandom(context, { n, n }, { nb, nb }, 1);
-    // auto A = DistributedMatrix<double>::Initialized(context, {6, 4}, {3, 3}, 
-    // { 
-    //     -0.57, -1.28, -0.39,  0.25,
-    //     -1.93,  1.08, -0.31, -2.14,
-    //      2.30,  0.24,  0.40, -0.35,
-    //     -1.93,  0.64, -0.66,  0.08,
-    //      0.15,  0.30,  0.15, -2.13,
-    //     -0.02,  1.03, -1.43,  0.50,
-    // });
-    auto C = DistributedMatrix<double>::Uninitialized(context, A.Dims(), A.BlockSize());
-
-    //auto D = DistributedMatrix<double>::Duplicate(A);
-
-    auto Tau = DistributedMatrix<double>::Zeros(context, A.Dims().row, A.BlockSize().row);
+    auto A = DistributedMatrix<c64>::RandomHermitian(context, n, { nb, nb }, 1);
+    auto Tau = DistributedMatrix<c64>::Uninitialized(context, A.Dims().row, A.BlockSize().row);
 
     PvGERQF(A, Tau);
-    //Tau.PrintLocal();
+    PvUNGR2(A, Tau);
 
-    //D.PrintGlobal();
+    // Test orthonormality
+    for (int i = 0; i < n; ++i)
+    {
+        auto Ai = A.SubmatrixColumn(i);
 
-    PvORGR2(A, Tau);
+        // Normality
+        double v = PvNRM2(Ai);
+        assert((abs(v) - 1.0) < 1e-4);
 
-    A.PrintGlobal();
+        if (pid == 0)
+        {
+            std::cout << "||A_" << i << "|| = " << v << std::endl;
+        }
 
-    // for (int i = 0; i < pc; ++i)
-    // {
-    //     if (pid == i)
-    //     {
-    //         std::cout << pid << ": ";
-    //         Tau.PrintLocal(std::cout);
-    //         std::cout.flush();
-    //     }
-    //     Cblacs_barrier(context, "All");
-    // }
+        for (int j = i + 1; j < n; ++j)
+        {
+            auto Aj = A.SubmatrixColumn(j);
+
+            // Orthogonality
+            c64 d = PvDOTC(Ai, Aj);
+            assert(std::abs(d) < 1e-4);
+
+            if (pid == 0)
+            {
+                std::cout << "Dot(A_" << i << ", A_" << j << ") = " << d << std::endl;
+            }
+        }
+
+        if (pid == 0)
+        {
+            std::cout << std::endl;
+        }
+    }
+}
+
+void TestNormOp(int context, int pc, int pid, int n, int nb)
+{
+    auto Al = pid == 0 ? LocalMatrix<c64>::RandomHermitian(n, 2) : LocalMatrix<c64>::Uninitialized({n, n});
+    auto A = DistributedMatrix<c64>::Initialized(context, {nb, nb}, Al);
+
+    Cblacs_barrier(context, "All");
+
+    auto b = A.InfinityNorm();
+    if (pid == 0)
+    {
+        std::cout << std::setprecision(6) << b << std::endl;
+    }
+
+    double b2 = Al.InfinityNorm();
+    if (pid == 0)
+    {
+        std::cout << std::setprecision(6) << b2 << std::endl;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -130,10 +198,8 @@ int main(int argc, char* argv[])
     // Grab MPI IDs
     MPI_Init(&argc, &argv);
 
-    int pc;
+    int pc, pid;
     MPI_CHECK(MPI_Comm_size(MPI_COMM_WORLD, &pc));
-
-    int pid;
     MPI_CHECK(MPI_Comm_rank(MPI_COMM_WORLD, &pid));
 
     int nameLen;
@@ -150,9 +216,9 @@ int main(int argc, char* argv[])
     int2 pgDims = CalcProcessorGridDims(pc);
     Cblacs_gridinit(&context, "R", pgDims.row, pgDims.col);
 
-    //TestPvHEEV(context, n, nb, 0);
-    //TestQQtError(context, n, nb, 0);
-    TestPvGESRQ(context, pc, pid, n, nb);
+    //TestError(context, pc, pid, n, nb, 0);
+    //TestQRFactorization(context, pc, pid, n, nb);
+    TestNormOp(context, pc, pid, n, nb);
 
     Cblacs_gridexit(context);
     MPI_Finalize();

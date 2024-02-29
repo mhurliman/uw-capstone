@@ -41,12 +41,12 @@ void ScatterMatrix(int2 id, int2 pgDims, const T* global, const MatDesc& desc, T
 
             if (id.IsRoot()) 
             {
-                ops::GESD2D(ctxt, nr, nc, &global[CMIDX(r, c, M)], M, sendr, sendc);
+                ops::CvGESD2D(ctxt, nr, nc, &global[CMIDX(r, c, M)], M, sendr, sendc);
             }
 
             if (id.row == sendr && id.col == sendc) 
             {
-                ops::GERV2D(ctxt, nr, nc, &local[CMIDX(recvr, recvc, localDims.row)], localDims.row, 0, 0);
+                ops::CvGERV2D(ctxt, nr, nc, &local[CMIDX(recvr, recvc, localDims.row)], localDims.row, 0, 0);
                 recvc = (recvc + nc) % localDims.col;
             }
         }
@@ -82,19 +82,243 @@ void GatherMatrix(int2 id, int2 pgDims, T* global, const MatDesc& desc, const T*
 
             if (id.row == sendr && id.col == sendc) 
             {
-                ops::GESD2D(ctxt, nr, nc, &local[CMIDX(recvr, recvc, localDims.row)], localDims.row, 0, 0);
+                ops::CvGESD2D(ctxt, nr, nc, &local[CMIDX(recvr, recvc, localDims.row)], localDims.row, 0, 0);
                 recvc = (recvc + nc) % localDims.col;
             }
-            
+
             if (id.IsRoot()) 
             {
-                ops::GERV2D(ctxt, nr, nc, &global[CMIDX(r, c, M)], M, sendr, sendc);
+                ops::CvGERV2D(ctxt, nr, nc, &global[CMIDX(r, c, M)], M, sendr, sendc);
             }
         }
 
         if (id.row == sendr)
             recvr = (recvr + nr) % localDims.row;
     }
+}
+
+template <typename T>
+ValueType<T> DistributedMatrix<T>::OneNorm(void) const
+{
+    // Compute local sum of each column
+    auto sum = std::vector<ValueType<T>>(m_localDims.col, 0);
+
+    for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+    {
+        for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+        {
+            sum[iCol] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
+        }
+    }
+
+    // Sum reduction along rows
+    auto dest = std::vector<ValueType<T>>(m_localDims.col);
+
+    for (int order = 1; order < m_PGridDims.row; order <<= 1)
+    {
+        // Swizzle the LSB to get the exchange process id
+        int xRowId = m_PGridId.row ^ order;
+
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xRowId >= m_PGridDims.row)
+            continue;
+
+        // Threads with '1' LSB send to lower id threads
+        if ((m_PGridId.row & order) != 0)
+        {
+            ops::CvGESD2D(m_desc.ctxt, 1, m_localDims.col, sum.data(), 1, xRowId, m_PGridId.col);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, m_localDims.col, dest.data(), 1, xRowId, m_PGridId.col);
+
+            // Accumulate exchanged values
+            for (int i = 0; i < m_localDims.col; ++i)
+            {
+                sum[i] += dest[i];
+            }
+        }
+    }
+
+    ValueType<T> max = *std::max_element(sum.begin(), sum.end());
+    ValueType<T> recv;
+
+    // Max reduction along columns of row 0
+    if (m_PGridId.row == 0)
+    {
+        for (int order = 1; order < m_PGridDims.col; order <<= 1)
+        {
+            int xColId = m_PGridId.col ^ order;
+            if (xColId >= m_PGridDims.col)
+                continue;
+
+            if ((m_PGridId.col & order) != 0)
+            {
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &max, 1, 0, xColId);
+                break;
+            }
+            else
+            {
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &recv, 1, 0, xColId);
+                max = std::max(max, recv);
+            }
+
+        }
+    }
+
+    // Optional step, but broadcast the final result back sto all processes
+    MPI_Bcast(&max, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> DistributedMatrix<T>::InfinityNorm(void) const
+{
+    // Compute local sum of each row
+    auto sum = std::vector<ValueType<T>>(m_localDims.row, 0);
+
+    for (int iCol = 0; iCol < m_localDims.col; ++iCol)
+    {
+        for (int iRow = 0; iRow < m_localDims.row; ++iRow)
+        {
+            sum[iRow] += std::abs(m_localData[CMIDX(iRow, iCol, m_localDims.row)]);
+        }
+    }
+
+    // Sum reduction along rows
+    auto dest = std::vector<ValueType<T>>(m_localDims.row);
+
+    for (int order = 1; order < m_PGridDims.col; order <<= 1)
+    {
+        // Swizzle the LSB of the column id to get the exchange process id
+        int xColId = m_PGridId.col ^ order;
+
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xColId >= m_PGridDims.col)
+            continue;
+
+        // Processes with '1' LSB send to lower id threads
+        if ((m_PGridId.col & order) != 0)
+        {
+            ops::CvGESD2D(m_desc.ctxt, 1, m_localDims.row, sum.data(), 1, m_PGridId.row, xColId);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, m_localDims.row, dest.data(), 1, m_PGridId.row, xColId);
+
+            // Accumulate exchanged values
+            for (int i = 0; i < m_localDims.row; ++i)
+            {
+                sum[i] += dest[i];
+            }
+        }
+    }
+
+    ValueType<T> max = *std::max_element(sum.begin(), sum.end());
+    ValueType<T> recv;
+
+    // Max reduction along columns of row 0
+    if (m_PGridId.col == 0)
+    {
+        for (int order = 1; order < m_PGridDims.row; order <<= 1)
+        {
+            int xRowId = m_PGridId.row ^ order;
+            
+            if (xRowId >= m_PGridDims.row)
+                continue;
+
+            // Processes with '1' LSB send to lower id threads
+            if ((m_PGridId.row & order) != 0)
+            {
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &max, 1, xRowId, 0);
+                break;
+            }
+            else
+            {
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &recv, 1, xRowId, 0);
+                max = std::max(max, recv);
+            }
+
+        }
+    }
+
+    // Optional step, but broadcast the final result back to all processes
+    MPI_Bcast(&max, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> DistributedMatrix<T>::FrobeniusNorm(void) const
+{
+    // Compute local absolute sum
+    ValueType<T> sum = std::accumulate(
+        m_localData.get(), 
+        m_localData.get() + m_localDims.Count(),
+        0,
+        [](auto x, auto y) { return x + std::real(std::conj(y) * y); } // Must account for complex dot product
+    );
+
+    // Sum reduction along rows
+    ValueType<T> dest;
+
+    for (int order = 1; order < m_PGridDims.row; order <<= 1)
+    {
+        // Swizzle the LSB to get the exchange process id
+        int xRowId = m_PGridId.row ^ order;
+
+        // Sit out this exchange if the sending thread is out of range of the grid dimensions
+        if (xRowId >= m_PGridDims.row)
+            continue;
+
+        // Threads with '1' LSB send to lower id threads
+        if ((m_PGridId.row & order) != 0)
+        {
+            ops::CvGESD2D(m_desc.ctxt, 1, 1, &sum, 1, xRowId, m_PGridId.col);
+            break;
+        }
+        else // Threads with '0' LSB receive from higher threads
+        {
+            ops::CvGERV2D(m_desc.ctxt, 1, 1, &dest, 1, xRowId, m_PGridId.col);
+
+            sum += dest;
+        }
+    }
+
+    // Sum reduction along columns of row 0
+    if (m_PGridId.row == 0)
+    {
+        for (int order = 1; order < m_PGridDims.col; order <<= 1)
+        {
+            int xColId = m_PGridId.col ^ order;
+            
+            // Sit out this exchange if the sending thread is out of range of the grid dimensions
+            if (xColId >= m_PGridDims.col)
+                continue;
+
+            if ((m_PGridId.col & order) != 0)
+            {
+                ops::CvGESD2D(m_desc.ctxt, 1, 1, &sum, 1, 0, xColId);
+                break;
+            }
+            else
+            {
+                ops::CvGERV2D(m_desc.ctxt, 1, 1, &dest, 1, 0, xColId);
+                sum += dest;
+            }
+        }
+    }
+
+    // Norm that baby
+    sum = sqrt(sum);
+
+    // Optional step, but broadcast the final result back sto all processes
+    MPI_Bcast(&sum, 1, MPI_Type<T>, 0, MPI_COMM_WORLD);
+
+    return sum;
 }
 
 template <typename T>
@@ -141,6 +365,54 @@ void LocalMatrix<T>::CustomOp(CustomOpFunc f)
 }
 
 template <typename T>
+ValueType<T> LocalMatrix<T>::OneNorm(void) const
+{
+    ValueType<T> max = 0;
+    for (int i = 0; i < m_dims.row; ++i)
+    {
+        ValueType<T> sum = 0;
+
+        for (int j = 0; j < m_dims.col; ++j)
+            sum += std::abs(m_data[i + m_dims.row * j]);
+
+        if (sum > max)
+            max = sum;
+    }
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> LocalMatrix<T>::InfinityNorm(void) const
+{
+    ValueType<T> max = 0;
+    for (int j = 0; j < m_dims.col; ++j)
+    {
+        ValueType<T> sum = 0;
+
+        for (int i = 0; i < m_dims.row; ++i)
+            sum += std::abs(m_data[i + m_dims.row * j]);
+
+        if (sum > max)
+            max = sum;
+    }
+
+    return max;
+}
+
+template <typename T>
+ValueType<T> LocalMatrix<T>::FrobeniusNorm(void) const
+{
+    ValueType<T> sum = 0;
+    for (int j = 0; j < m_dims.col; ++j)
+    {
+        for (int i = 0; i < m_dims.row; ++i)
+            sum += std::norm(m_data[i + m_dims.row * j]);
+    }
+    return sqrt(sum);
+}
+
+template <typename T>
 LocalMatrix<T> LocalMatrix<T>::Uninitialized(int2 dims)
 {
     LocalMatrix<T> A;
@@ -152,7 +424,7 @@ template <typename T>
 template <typename U>
 LocalMatrix<T> LocalMatrix<T>::Uninitialized(const LocalMatrix<U>& dimsSpec)
 {
-    return Uninitialized(dimsSpec.m_dims.row, dimsSpec.m_dims.col);
+    return Uninitialized(dimsSpec.m_dims);
 }
 
 template <typename T>
@@ -194,6 +466,43 @@ LocalMatrix<T> LocalMatrix<T>::Initialized(const LocalMatrix<U>& data)
 
 
 template <typename T>
+LocalMatrix<T> LocalMatrix<T>::RandomHermitian(int n, int seed)
+{
+    Random<T> r(seed);
+    auto A = Uninitialized({n, n});
+    
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j <= i; ++j)
+        {
+            if (i == j)
+            {
+                A.m_data[j + i * n] = r.GenerateReal();
+            }
+            else
+            {
+                T v = r();
+                A.m_data[j + i * n] = v;
+                A.m_data[i + j * n] = std::conj(v);
+            }
+        }
+    }
+
+    return A;
+}
+
+template <typename T>
+ValueType<T> LocalMatrix<T>::ASum(void) const
+{
+    ValueType<T> acc = 0;
+    for (int i = 0; i < NumElements(); ++i)
+    {
+        acc += std::abs(m_data[i]);
+    }
+    return acc;
+}
+
+template <typename T>
 void LocalMatrix<T>::Init(int2 dims)
 {
     assert(dims.ValidDims());
@@ -209,7 +518,7 @@ LocalMatrix<T> DistributedMatrix<T>::ToLocalMatrix(void) const
     LocalMatrix<T> m;
     if (IsRootProcess())
     {
-        m = LocalMatrix<T>::Uninitialized({ m_desc.M, m_desc.N });
+        m = LocalMatrix<T>::Uninitialized(m_subDims);
     }
 
     GatherMatrix<T>(m_PGridId, m_PGridDims, m.Data(), m_desc, m_localData.get(), m_localDims);
@@ -271,23 +580,26 @@ void DistributedMatrix<T>::CustomLocalOp(CustomOpFunc f)
 template <typename T>
 void DistributedMatrix<T>::Init(int context, int2 dims, int2 blockSize)
 {
+    assert(dims.row != blockSize.row && dims.col != blockSize.col);
+
     Cblacs_gridinfo(context, &m_PGridDims.row, &m_PGridDims.col, &m_PGridId.row, &m_PGridId.col);
 
     const int zero = 0;
     m_localDims.row = numroc_(&dims.row, &blockSize.row, &m_PGridId.row, &zero, &m_PGridDims.row);
     m_localDims.col = numroc_(&dims.col, &blockSize.col, &m_PGridId.col, &zero, &m_PGridDims.col);
 
-    m_localDims.row = std::max(1, m_localDims.row);
-    m_localDims.col = std::max(1, m_localDims.col);
-
     m_subDims = dims;
     m_subIndex = int2::One(); // A horrifically base-one system
 
     int2 allocDims = m_localDims;
     if (allocDims.row == 1)
+    {
         allocDims.col = dims.col;
+    }
     else if (allocDims.col == 1)
+    {
         allocDims.row = dims.row;
+    }
 
     m_localData.reset(new T[allocDims.Count()]);
 
@@ -300,7 +612,7 @@ void DistributedMatrix<T>::Init(int context, int2 dims, int2 blockSize)
         &blockSize.row, &blockSize.col, 
         &zero, &zero, 
         &context, 
-        &m_localDims.row, 
+        &m_localDims.row,
         &info
     );
     assert(info >= 0);
@@ -310,7 +622,7 @@ template <typename T>
 void DistributedMatrix<T>::PrintLocal(std::ostream& os) const
 {
 #if 1
-    int pid = m_PGridId.FlatCM(m_PGridDims.row);
+    int pid = m_PGridId.FlatRM(m_PGridDims.col);
 
     for (int i = 0; i < m_PGridDims.Count(); ++i)
     {
@@ -393,7 +705,7 @@ template <typename T>
 DistributedMatrix<T> DistributedMatrix<T>::Uninitialized(int context, int numRows, int blockSize)
 {
     DistributedMatrix<T> A;
-    A.Init(context, numRows, 1, blockSize, 1);
+    A.Init(context, { numRows, 1 }, { blockSize, 1 });
     return A;
 }
 
@@ -861,6 +1173,7 @@ void PvUNGR2(DistributedMatrix<T>& A, const DistributedMatrix<T>& Tau)
         Tau.Data(), work.get(), &lwork, &info
     );
 }
+
 template <typename T>
 void PvHEEV(DistributedMatrix<T>& A, LocalMatrix<ValueType<T>>& W, DistributedMatrix<T>& Z)
 {
@@ -1013,7 +1326,7 @@ T PvDOTU(const DistributedMatrix<T>& X, DistributedMatrix<T>& Y)
         Y.NumCols() == 1
     );
 
-    ValueType<T> result{};
+    T result{};
 
     const int inc = 1;
     ops::PvDOTU(
@@ -1035,7 +1348,7 @@ T PvDOTC(const DistributedMatrix<T>& X, DistributedMatrix<T>& Y)
         Y.NumCols() == 1
     );
 
-    ValueType<T> result{};
+    T result{};
 
     const int inc = 1;
     ops::PvDOTC(

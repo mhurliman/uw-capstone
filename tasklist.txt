@@ -1,0 +1,3 @@
+Implement matrix norm ops
+Reimplement Scatter & Gather to support submatrices
+Error graph over increasing N: QQ^H=1 vs HZ - eZ = 0
