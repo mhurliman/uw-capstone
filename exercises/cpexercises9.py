@@ -9,6 +9,8 @@ import types
 from time import time
 import dcst
 
+import IntegrationMethods as im
+
 def ex_9_1a():
     M = 100
     V = 1.0
@@ -334,6 +336,55 @@ def ex_9_9():
         ax.set(title='t = {:.3f} fs'.format(t * 1e15))
 
     a = anim.FuncAnimation(fig=fig, func=update, interval=1)
+    plt.show()
+
+
+def ex_test():
+    N = 1000
+    L = 1e-8 # m
+    a = L / N
+
+    h = 1e-18 # s
+    T = h * 1000
+
+    x_0 = L / 2
+    sigma = 1e-10 # m
+    K = 5e10 # m^-1
+
+    hb = 1.054571817e-34 # J s 
+    m = 9.109e-31 # kg
+
+    ki = np.arange(100)
+    xi = np.linspace(0, L, N)
+
+    E_k = lambda k : (k * np.pi * hb)**2 / (2 * m * a**2)           # Energy
+    psi_k = lambda x, k: np.sqrt(2 / L) * np.sin(np.pi * k * x / L) # Stationary-state solution
+    phi_t = lambda t, k: np.exp(-1j * E_k(k) * t / hb)              # Time-dependent factor
+
+    # Initial condition - Normalized time-dependent trial wave function
+    Psi_x0 = lambda x: np.exp(-(x - x_0)**2 / (2 * sigma**2)) * np.exp(1j * K * x) # * (np.pi * sigma**2)**-0.25
+
+    # Compute complex coefficients of stationary-state
+    integrand = lambda x, k: psi_k(x, k) * Psi_x0(x)
+    integral = lambda k : im.trapezoidal(bind(integrand, k=k), 0, L, L/N)
+    c_k = np.vectorize(integral)(ki) # Only compute this once
+
+    # Create our function for computing time-dependent wave function
+    Psi = lambda x, t, k: np.sum(c_k[k] * psi_k(x, k) * phi_t(t, k))
+    vPsi = np.vectorize(Psi, excluded=['k'])
+
+    fig, ax = plt.subplots()
+    wave = ax.plot(xi, np.abs(vPsi(xi, 0, k=ki)))[0]
+    ax.set(ylim=[-1, 1], xlabel='x (m)', ylabel='psi(x, t)')
+
+    def update(frame):
+        t = frame * h
+        y = np.abs(vPsi(xi, t, k=ki))
+
+        wave.set_ydata(y)
+        ax.set(title='t = {:.3f} fs'.format(t * 1e15))
+
+    an = anim.FuncAnimation(fig=fig, func=update, interval=1)
     plt.show()
 
 
