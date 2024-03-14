@@ -134,8 +134,11 @@ def qho2d():
     plt.show()
 
 def qho3d():
+    
+    c = 4 # Energy levels to map
+
     N = 8
-    L = 1e-8
+    L = 1e-4
     a =  L / N
 
     f = 8.88e13
@@ -145,7 +148,6 @@ def qho3d():
     hb = 1.054571817e-34 # J s 
     hbEv = 6.5821220e-16 # Ev s
 
-    c = 2 # Energy levels to map
     f = lambda p : -L / 2 + p * a
 
     plot_args = {
@@ -168,7 +170,7 @@ def qho3d():
     yy = yis0 - yis1
     y0, y1 = yy == 0, abs(yy) == 1
 
-    zis0, zis1 = np.meshgrid(yis, yis)
+    zis0, zis1 = np.meshgrid(zis, zis)
     zz = zis0 - zis1
     z0, z1 = zz == 0, abs(zz) == 1
 
