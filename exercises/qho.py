@@ -149,16 +149,15 @@ def qho3d():
     f = lambda p : -L / 2 + p * a
 
     plot_args = {
-        'rstride': 1, 'cstride': 1, 'cmap': 'viridis', 'linewidth': 0.01, 
-        'antialiased': True, 'color': 'w', 'shade': True 
+        'cmap': 'viridis'
     }
 
     xi = np.arange(N + 1)
     yi, zi = np.copy(xi), np.copy(xi)
 
-    xis = np.tile(xi, N + 1)
+    xis = np.tile(xi, (N + 1)**2)
     yis = np.tile(np.repeat(yi, N + 1), N + 1)
-    zis = np.repeat(zi, (N + 1)**3)
+    zis = np.repeat(zi, (N + 1)**2)
 
     # Fancy method of laying out T
     xis0, xis1 = np.meshgrid(xis, xis)
@@ -194,7 +193,7 @@ def qho3d():
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
-    ax.plot_surface(xis, yis, np.real(vc) + ec, **plot_args)
+    ax.scatter(xis, yis, zis, c=np.real(vc) + ec, **plot_args)
 
     h = 1.0 / 33 / ec * 2 * np.pi
 
@@ -202,9 +201,9 @@ def qho3d():
         t = frame * h
 
         ax.clear()
-        ax.set(zlim=[-m, m], xlabel='x (m)', ylabel='y (m)', zlabel='psi(x, t)', title='t = {} (s)'.format(t))
+        ax.set(xlabel='x (m)', ylabel='y (m)', zlabel='y (m)', title='t = {} (s)'.format(t))
 
-        ax.plot_surface(xis, yis, np.real(vc * np.exp(1j * ec * t)) + ec, **plot_args)
+        ax.scatter(xis, yis, zis, c=np.real(vc * np.exp(1j * ec * t)) + ec, **plot_args)
 
 
     an = anim.FuncAnimation(fig=fig, func=update, interval=33)
