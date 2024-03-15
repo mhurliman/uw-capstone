@@ -58,7 +58,7 @@ def qho1d():
             if i < c:
                 w.set_ydata(y[:, i])
 
-    an = anim.FuncAnimation(fig=fig, func=update, interval=1)
+    an = anim.FuncAnimation(fig=fig, func=update, interval=33)
     plt.show()
 
 
@@ -200,7 +200,7 @@ def qho3d():
     h = 1.0 / 33 / ec * 2 * np.pi
 
     def update(frame):
-        t = frame * h
+        t = 0 #frame * h
 
         ax.clear()
         ax.set(xlabel='x (m)', ylabel='y (m)', zlabel='y (m)', title='t = {} (s)'.format(t))
@@ -211,5 +211,22 @@ def qho3d():
     an = anim.FuncAnimation(fig=fig, func=update, interval=33)
     plt.show()
 
+
+default = qho1d
+
 if __name__ == '__main__':
-    qho3d()
+    import sys
+    import types
+
+    if len(sys.argv) == 1:
+        default()
+
+    else:
+        name = sys.argv[1]
+        name = 'qho' + name
+
+        this = sys.modules[__name__]
+        f = getattr(this, name)
+
+        if isinstance(f, types.FunctionType):
+            f()
