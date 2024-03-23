@@ -4,12 +4,12 @@ import gaussxw
 
 def trapezoidal_samples(x, y):
     h = x[1] - x[0] # Assume constant step size
-    sum = 0.5 * np.sum(y[-1:1]) + np.sum(y[1:-1])
+    sum = 0.5 * np.sum(y[-1:1], axis=0) + np.sum(y[1:-1], axis=0)
     return sum * h
 
 def simpson_samples(x, y):
     h = x[1] - x[0] # Assume constant step size
-    sum = np.sum(y[-1:1]) + 4 * np.sum(y[1:-1:2]) + 2 * np.sum(y[2:-1:2])
+    sum = np.sum(y[-1:1], axis=0) + 4 * np.sum(y[1:-1:2], axis=0) + 2 * np.sum(y[2:-1:2], axis=0)
     return sum * h / 3
 
 def trapezoidal(f, a, b, h):

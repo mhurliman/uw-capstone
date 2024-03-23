@@ -350,8 +350,8 @@ def ex_test():
     sigma = 1e-10 # m
     K = 5e10 # m^-1
 
-    hb = 1.054571817e-34 # J s 
-    m = 9.109e-31 # kg
+    hb = 1 #1.054571817e-34 # J s 
+    m = 1 #9.109e-31 # kg
 
     ki = np.arange(10)
     xi = np.linspace(0, L, N+1)
@@ -369,9 +369,6 @@ def ex_test():
     xs, ks = np.meshgrid(xi, ki, indexing='xy')
     ps = integrand(xs, ks)
     vs = np.trapz(ps, axis=1)
-
-    print(ps.shape)
-    print(vs.shape)
 
     integral = lambda k : im.simpson(bind(integrand, k=k), 0, L, L/N)
     c_k = np.vectorize(integral)(ki) # Only compute this once

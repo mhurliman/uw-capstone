@@ -17,15 +17,14 @@ def qho1d():
     dx =  2 * xmax / N
 
     f = 8.88e13
-    w = 2 * np.pi * f
+    w = 1 # 2 * np.pi * f
 
-    m =  9.109e-31 # kg
+    m = 1 # 9.109e-31 # kg
     hb = 1.0 # 1.054571817e-34 # J s 
-    hbEv = 6.5821220e-16 # Ev s
+    hbEv = 1 # 6.5821220e-16 # Ev s
 
     c = 3 # Energy levels to map
 
-    xi = np.arange(N)
     x = np.linspace(-xmax, xmax, N+1)
 
     U = 0.5 * m * w**2 * x**2
@@ -34,12 +33,12 @@ def qho1d():
 
     e, v = np.linalg.eigh(H)
 
-    vc = np.reshape(v[:, c], N+1)
-    m = np.max(abs(vc) + e[c])
+    ymax = np.max(abs(np.reshape(v[:, c-1], N+1))) + e[c-1]
+    ymin = -np.max(abs(np.reshape(v[:, 0], N+1))) + e[0]
 
     fig, ax = plt.subplots()
     wave = ax.plot(x, np.zeros([N+1, c+1]))
-    ax.set(ylim=[0, m], xlabel='x (m)', ylabel='psi(x, t)')
+    ax.set(ylim=[ymin, ymax], xlabel='x (m)', ylabel='psi(x, t)')
 
     dt = (1.0 / 33) / e[0] * np.pi * 2
 
@@ -66,13 +65,13 @@ def qho2d():
     dx =  2 * xmax / N
 
     f = 8.88e13
-    w = 1.0 #2 * np.pi * f
+    w = 2 * np.pi * f
 
-    m = 1.0 #9.109e-31 # kg
-    hb = 1.0 #1.054571817e-34 # J s 
+    m = 9.109e-31 # kg
+    hb = 1.054571817e-34 # J s 
     hbEv = 6.5821220e-16 # Ev s
 
-    c = 2 # Energy levels to map
+    c = 5 # Energy levels to map
     f = lambda p : -xmax + p * dx
 
     xi, yi = np.arange(N + 1), np.arange(N + 1)
@@ -89,7 +88,7 @@ def qho2d():
     yy = yis0 - yis1
     y0, y1 = yy == 0, abs(yy) == 1
 
-    T = -hb**2 / (2 * m * dx**2) * np.select([x0 & y0, (x1 & y0) | (x0 & y1)], [-4, 1], 0)
+    T = -hbEv**2 / (2 * m * dx**2) * np.select([x0 & y0, (x1 & y0) | (x0 & y1)], [-4, 1], 0)
 
     xs, ys = f(xis), f(yis)
     U = 0.5 * m * w**2 * (xs**2 + ys**2)
@@ -132,12 +131,13 @@ def qho3d():
     dx =  2 * xmax / N
 
     f = 8.88e13
-    w = 1.0 # 2 * np.pi * f
+    w = 2 * np.pi * f
 
-    m = 1.0 # 9.109e-31 # kg
-    hb = 1.0 # 1.054571817e-34 # J s 
+    m = 9.109e-31 # kg
+    hb = 1.054571817e-34 # J s 
+    hbEv = 6.5821220e-16 # Ev s
 
-    c = 8 # Energy levels to map
+    c = 1 # Energy level to map
 
     f = lambda p : -xmax + p * dx
 
@@ -161,7 +161,7 @@ def qho3d():
     zz = zis0 - zis1
     z0, z1 = zz == 0, abs(zz) == 1
 
-    T = -hb**2 / (2 * m * dx**2) * np.select([x0 & y0 & z0, (x1 & y0 & z0) | (x0 & y1 & z0) | (x0 & y0 & z1)], [-6, 1], 0)
+    T = -hbEv**2 / (2 * m * dx**2) * np.select([x0 & y0 & z0, (x1 & y0 & z0) | (x0 & y1 & z0) | (x0 & y0 & z1)], [-6, 1], 0)
 
     xs, ys, zs = f(xis), f(yis), f(zis)
     U = 0.5 * m * w**2 * (xs**2 + ys**2 + zs**2)
