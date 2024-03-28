@@ -6,10 +6,7 @@ from matplotlib import (
 
 # Creates a tridiagonal matrix with a, b, c as the repeated elements along the diagonal
 def triagonal(a, b, c, n):
-    a = np.diag(np.full(n-1, a, dtype=np.double), -1)
-    a += np.diag(np.full(n, b, dtype=np.double), 0)
-    a += np.diag(np.full(n-1, c, dtype=np.double), 1)
-    return a
+    return np.diag(np.full(n-1, a), -1) + np.diag(np.full(n, b), 0) + np.diag(np.full(n-1, c), 1)
 
 def gaussian1d(x, mu, sigma):
     return (1 / np.sqrt(2 * np.pi * sigma**2)) * np.exp(-(1/2) * ((x - mu) / sigma)**2)
@@ -41,7 +38,7 @@ def hermite_psi(x, n):
     return 1 / np.sqrt(2**n * np.prod(np.arange(1, n+1))) * hermite_poly(x, n) * np.exp(-x**2/2)
 
 def qho1d():
-    N = 2000
+    N = 10
 
     xmax = 5
     dx =  2 * xmax / N
@@ -52,9 +49,9 @@ def qho1d():
     m = 9.109e-31 # kg
     hb = 1.054571817e-34 * 6.242e18 # J s * EV/J
 
-    c = 3  # Energy levels to cutoff
+    c = N  # Energy levels to cutoff
 
-    x = np.linspace(-xmax, xmax, N+1, dtype=np.double)
+    x = np.linspace(-xmax, xmax, N+1)
 
     U = 0.5 * m * w**2 * x**2
     T = -hb**2 / (2 * m * dx**2) * triagonal(1, -2, 1, N+1)
@@ -107,7 +104,7 @@ def qho2d():
     m = 9.109e-31 # kg
     hb = 1.054571817e-34 * 6.242e18 # J s * EV/J 
 
-    c = 20 # Energy levels to map
+    c = N # Energy levels to map
     f = lambda p : -xmax + p * dx
 
     xi, yi = np.arange(N + 1), np.arange(N + 1)
@@ -172,7 +169,7 @@ def qho3d():
     m = 9.109e-31 # kg
     hb = 1.054571817e-34 * 6.242e18 # J s 
 
-    c = 50 # Energy level to map
+    c = N # Energy level to map
 
     f = lambda p : -xmax + p * dx
 
@@ -231,7 +228,7 @@ def qho3d():
         ax.scatter(xis, yis, zis, c=cf, cmap='viridis')
 
 
-    an = anim.FuncAnimation(fig=fig, func=update, interval=dF)
+    an = anim.FuncAnimation(fig=fig, func=update, interval=dF, cache_frame_data=False)
     plt.show()
 
 
